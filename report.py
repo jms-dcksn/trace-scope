@@ -2,7 +2,7 @@
 from datetime import datetime
 from pathlib import Path
 
-REPORTS_DIR = Path(__file__).parent
+REPORTS_DIR = Path(__file__).parent / "results"
 
 
 def md_escape(s: str) -> str:
