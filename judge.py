@@ -16,6 +16,7 @@ class Judge:
         self.model = model
         self._llm = ChatOpenAI(
             model=model,
+            temperature=0,
             use_responses_api=True,
             output_version="responses/v1",
         ).with_structured_output(JudgeVerdict)
