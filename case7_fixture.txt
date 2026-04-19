@@ -1,0 +1,9 @@
+The most recent IPCC Synthesis Report is the **AR6 Synthesis Report (Climate Change 2023)**, which combines findings from the IPCC’s three Working Group reports and earlier special reports. Its core message is that **human activity has unequivocally caused warming of about 1.1°C**, that impacts and losses are already widespread, and that **every increment of warming increases risks**. It also stresses that **deep, rapid, and sustained emissions cuts this decade** are needed to keep warming near 1.5°C or below 2°C, and that climate-resilient development depends on both mitigation and adaptation, supported by finance, technology, and international cooperation. ([ipcc.ch](https://www.ipcc.ch/report/ar6/syr/downloads/report/IPCC_AR6_SYR_FullVolume.pdf))
+
+Two specific policy recommendations relevant to the financial sector are:
+
+1. **Improve climate-risk assessment and investment allocation.** The report says private finance shifts should include better assessment of climate-related risks and investment opportunities, along with reducing mismatches between available capital and climate investment needs. ([ipcc.ch](https://www.ipcc.ch/report/ar6/syr/downloads/report/IPCC_AR6_SYR_FullVolume.pdf))
+
+2. **Align public finance and lower financing barriers to de-risk climate investment.** The report says scaling up financial flows requires stronger alignment of public finance, lower regulatory/cost/market barriers, and higher public finance to reduce the risks of low-emission investments; it also notes that investors, financial intermediaries, central banks, and financial regulators can help correct the systemic underpricing of climate-related risks. ([ipcc.ch](https://www.ipcc.ch/report/ar6/syr/downloads/report/IPCC_AR6_SYR_FullVolume.pdf))
+
+If you want, I can also turn this into a 2–3 sentence executive briefing or extract the exact IPCC wording for the finance section.
