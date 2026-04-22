@@ -8,20 +8,24 @@ Treats `pass` as the positive class:
 """
 import time
 
-from data import dataset, golden_dataset
-from judge import Judge
+from data import dataset, golden_dataset, reference_output
+from judge import CorrectnessJudge
 from report import write_report
 
 
 def run_judge_precision_recall(model: str = "gpt-5.4") -> None:
-    judge = Judge(model)
+    judge = CorrectnessJudge(model)
     tp = fp = tn = fn = 0
     rows = []
     start = time.perf_counter()
 
     for i, item in enumerate(golden_dataset, 1):
         case = dataset[item["case_idx"]]
-        predicted, reasoning = judge.evaluate(case["input"], item["output"], case["criteria"])
+        ref = reference_output(item["case_idx"])
+        result = judge.evaluate(case["input"], item["output"], case["criteria"], ref)
+        predicted = result.label
+        confidence = result.confidence
+        reasoning = result.reasoning
         gold = item["gold_label"]
         if predicted == "pass" and gold == "pass":
             tp += 1; outcome = "TP"
@@ -32,7 +36,7 @@ def run_judge_precision_recall(model: str = "gpt-5.4") -> None:
         else:
             fn += 1; outcome = "FN"
         print(f"[{i:2d}] case {item['case_idx'] + 1} gold={gold} pred={predicted} → {outcome}")
-        rows.append((i, item["case_idx"] + 1, gold, predicted, outcome, reasoning))
+        rows.append((i, item["case_idx"] + 1, gold, predicted, confidence, outcome, reasoning))
 
     elapsed = time.perf_counter() - start
     precision = tp / (tp + fp) if (tp + fp) else 0.0
@@ -55,10 +59,10 @@ def run_judge_precision_recall(model: str = "gpt-5.4") -> None:
         f"- **Accuracy:** {accuracy:.2%}  ",
         f"- **Total time:** {elapsed:.2f}s",
         "",
-        "| # | Case | Gold | Predicted | Outcome | Judge reasoning |",
-        "|---|------|------|-----------|---------|-----------------|",
-        *[f"| {n} | {c} | {g} | {p} | {o} | {r.replace('|', '\\|')} |"
-          for n, c, g, p, o, r in rows],
+        "| # | Case | Gold | Predicted | Confidence | Outcome | Judge reasoning |",
+        "|---|------|------|-----------|------------|---------|-----------------|",
+        *[f"| {n} | {c} | {g} | {p} | {conf} | {o} | {r.replace('|', '\\|')} |"
+          for n, c, g, p, conf, o, r in rows],
     ]
     path = write_report("judge-pr", "\n".join(lines))
     print(f"\nReport saved to {path.name}")

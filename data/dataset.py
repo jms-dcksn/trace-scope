@@ -10,24 +10,6 @@ Each case has:
 dataset = [
     # --- Simple ---
     {
-        "input": "What's the capital of France?",
-        "expected": "Paris",
-        "criteria": [
-            "mentions Paris",
-            "doesn't hallucinate other cities as the capital",
-        ],
-        "tags": ["factual", "simple"],
-    },
-    {
-        "input": "Who wrote the novel 1984?",
-        "expected": "George Orwell",
-        "criteria": [
-            "mentions George Orwell",
-            "doesn't attribute the book to another author",
-        ],
-        "tags": ["factual", "simple"],
-    },
-    {
         "input": "What is the chemical symbol for gold?",
         "expected": "Au",
         "criteria": [
@@ -64,9 +46,20 @@ dataset = [
         "criteria": [
             "provides an EPA range figure for each vehicle",
             "correctly identifies which has the longer range",
-            "doesn't confuse trims or model years",
+            "notes any impact in the comparison from trim differences",
         ],
         "tags": ["comparison", "medium"],
+    },
+
+    {
+        "input": "What was the S&P 500's approximate total return in 2023, and how did it compare to 2022?",
+        "expected": None,
+        "criteria": [
+            "cites an approximately correct 2023 total return (~26%)",
+            "cites an approximately correct 2022 total return (~-18%)",
+            "correctly identifies 2023 as a recovery year relative to 2022",
+        ],
+        "tags": ["financial", "medium"],
     },
 
     # --- Super tough ---
@@ -107,5 +100,35 @@ dataset = [
             "risk described is genuinely about generative AI threatening the business, not generic tech risk",
         ],
         "tags": ["research", "financial", "hard"],
+    },
+    {
+        "input": (
+            "Which US states have enacted laws specifically regulating the use of AI in "
+            "health insurance utilization management or prior authorization decisions as of 2026? "
+            "Cite the statute or bill number for each."
+        ),
+        "expected": None,
+        "criteria": [
+            "names at least two US states with such laws",
+            "cites specific statute, bill, or regulation identifiers (not generic references)",
+            "scoped to health insurance UM/prior auth, not general AI or insurance laws",
+            "does not fabricate statute numbers or conflate proposed bills with enacted law",
+        ],
+        "tags": ["domain", "regulatory", "hard"],
+    },
+    {
+        "input": (
+            "Compare the agentic AI platform strategies of UiPath, Salesforce, and ServiceNow "
+            "as articulated in their most recent earnings calls or investor events. "
+            "Identify one material strategic difference between them."
+        ),
+        "expected": None,
+        "criteria": [
+            "references each of the three vendors' stated agentic AI strategy",
+            "cites a specific earnings call, investor day, or public announcement",
+            "identifies a genuine strategic difference (not generic feature comparison)",
+            "does not fabricate quotes or conflate marketing material with earnings commentary",
+        ],
+        "tags": ["research", "competitive", "hard"],
     },
 ]
