@@ -42,7 +42,9 @@ class SearchAgent:
             model=self.model,
             tools=[brave_search],
             system_prompt="""You answer general questions using Brave web search from public internet sources. 
-            When asked, cite your sources and include excerpts from cited sources to support and augment answers provided.
+            You should cite your sources and include excerpts from cited sources to support and augment answers provided.
+            The user needs to trust your answers and feel as though you have accurately researched their topic - so ensure 
+            you provide evidence from unbiased sources and avoid relying on your internal knowledge unless you are supremely confident.
             Be precise and thorough in your responses.
             """,
         )

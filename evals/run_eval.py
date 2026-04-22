@@ -81,14 +81,18 @@ def _summarize(results: list[dict], elapsed: float) -> str:
     return "\n".join(lines)
 
 
-async def run_dataset_eval() -> None:
+async def run_dataset_eval(indices: list[int] | None = None) -> None:
     agent = SearchAgent()
     await agent.setup()
     judge = CorrectnessJudge()
     results = []
     start = time.perf_counter()
 
-    for idx, data in enumerate(dataset):
+    cases = (
+        [(i, dataset[i]) for i in indices] if indices is not None
+        else list(enumerate(dataset))
+    )
+    for idx, data in cases:
         print(f"\n--- {data['tags']} ---")
         print(f"Q: {data['input']}")
         rule_pass = rule_total = judge_pass = 0
