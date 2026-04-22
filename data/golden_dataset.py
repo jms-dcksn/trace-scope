@@ -61,6 +61,29 @@ golden_dataset = [
     {
         "case_idx": 2,
         "output": (
+            "Tokyo's population depends on boundary:\n"
+            "- **Tokyo Metropolis (prefecture):** ~14.2M as of 2025 "
+            "(Statistics Bureau of Japan / Tokyo Metropolitan Government: "
+            "14,195,730).\n"
+            "- **Greater Tokyo Area (urban agglomeration):** ~37.0M in 2025 "
+            "(Macrotrends).\n\n"
+            "Over the last decade, Tokyo Metropolis grew from ~13.3M in 2014 "
+            "to 14.2M in 2025 (+0.9M, ~6–7%). Greater Tokyo has been roughly "
+            "flat to slightly declining (37.5M in 2015 → 37.0M in 2025) as "
+            "the core prefecture kept absorbing population from the wider "
+            "region."
+        ),
+        "gold_label": "pass",
+        "notes": (
+            "Second gold variant — explicitly distinguishes Tokyo Metropolis "
+            "from Greater Tokyo Area, names figures for both, gives trend "
+            "for each, and cites Statistics Bureau of Japan + Macrotrends. "
+            "Judged 3/3 pass with ≥87 confidence in the 04-21 20:04 run."
+        ),
+    },
+    {
+        "case_idx": 2,
+        "output": (
             "Tokyo is a very large city with a lot of people. Its population "
             "has changed somewhat over the past ten years."
         ),
@@ -189,6 +212,48 @@ golden_dataset = [
         ),
         "gold_label": "pass",
         "notes": "Cites real US insurance authorities, substantive, properly scoped to US insurance.",
+    },
+    {
+        "case_idx": 6,
+        "output": (
+            "Top 3 regulatory considerations for a mid-size US insurer "
+            "deploying agentic AI for claims triage in 2026:\n\n"
+            "1. **State insurance AI governance + unfair discrimination "
+            "controls.** The **NAIC Model Bulletin: Use of Artificial "
+            "Intelligence Systems by Insurers** (adopted Dec 2023) requires "
+            "AI-driven decisions to 'comply with all applicable insurance "
+            "laws and regulations, including those addressing unfair trade "
+            "practices and unfair discrimination,' and sets expectations for "
+            "a written AI governance program (model inventory, change "
+            "control, audit logs, bias/fairness testing, vendor oversight). "
+            "20+ states have adopted it or an equivalent bulletin.\n\n"
+            "2. **Claims handling + consumer-protection rules still apply.** "
+            "The **2023 joint FTC/CFPB/DOJ/EEOC statement** — 'There is no "
+            "AI exemption to the laws on the books' — and **NYDFS Insurance "
+            "Circular Letter No. 7 (2024)**, which requires insurers to "
+            "'explain, at all times, how the insurer's AIS operates' and to "
+            "remain 'ultimately responsible for the outcomes' of third-party "
+            "AI, mean agentic triage is regulated claims handling. Maintain "
+            "human review for adverse decisions and service-level standards "
+            "so AI does not create unfair claims-settlement delays.\n\n"
+            "3. **State-specific algorithmic fairness testing, especially CO "
+            "and NY.** **Colorado Division of Insurance Regulation 10-1-1** "
+            "(SB21-169 framework) establishes a governance/risk-management "
+            "framework for 'external consumer data and information sources, "
+            "algorithms, and predictive models' — amended regulation "
+            "effective Oct 15, 2025. **NYDFS Circular Letter No. 7** "
+            "requires ongoing model risk management and annual repeat of the "
+            "less-discriminatory-alternative search. Expect pre-deployment "
+            "and periodic fairness testing, documented business rationale "
+            "for triage variables, and state-by-state compliance mapping."
+        ),
+        "gold_label": "pass",
+        "notes": (
+            "Second gold variant drawn from the 04-21 20:04 run's case 7 "
+            "output, which judged 3/3 pass at ≥90 confidence. Organizes the "
+            "same NAIC/NYDFS/Colorado/federal authorities into governance "
+            "vs. claims-handling vs. state-fairness-testing buckets."
+        ),
     },
     {
         "case_idx": 6,
