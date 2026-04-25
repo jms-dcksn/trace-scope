@@ -5,9 +5,26 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Virtual environments
 .venv
 
+# Claude Code local settings (keep shared .claude/settings.json if you add one)
+.claude/settings.local.json
+
 # macOS
 .DS_Store
+
+# Local planning
+PLAN.md
+
+# SQLite
+evals.db
+evals.db-journal
+evals.db-wal
+evals.db-shm
+evals_test.db
+evals_test.db-journal

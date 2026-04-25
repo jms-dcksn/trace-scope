@@ -41,7 +41,7 @@ dataset = [
         "tags": ["research", "medium"],
     },
     {
-        "input": "Compare the battery range of the 2024 Tesla Model 3 Long Range vs the 2024 Hyundai Ioniq 6 Long Range.",
+        "input": "Compare the battery range of the 2024 Tesla Model 3 Long Range vs the 2024 Hyundai Ioniq 6 Long Range. Make sure to check RWD and AWD.",
         "expected": None,
         "criteria": [
             "provides an EPA range figure for each vehicle",
@@ -70,7 +70,6 @@ dataset = [
             "correctly identifies the AR6 Synthesis Report (2023) or newer if available",
             "accurately summarizes at least two key scientific findings",
             "cites two specific, real policy recommendations relevant to finance",
-            "does not fabricate recommendations or conflate with other reports",
         ],
         "tags": ["research", "hard"],
     },
@@ -112,7 +111,6 @@ dataset = [
             "names at least two US states with such laws",
             "cites specific statute, bill, or regulation identifiers (not generic references)",
             "scoped to health insurance UM/prior auth, not general AI or insurance laws",
-            "does not fabricate statute numbers or conflate proposed bills with enacted law",
         ],
         "tags": ["domain", "regulatory", "hard"],
     },
@@ -127,7 +125,6 @@ dataset = [
             "references each of the three vendors' stated agentic AI strategy",
             "cites a specific earnings call, investor day, or public announcement",
             "identifies a genuine strategic difference (not generic feature comparison)",
-            "does not fabricate quotes or conflate marketing material with earnings commentary",
         ],
         "tags": ["research", "competitive", "hard"],
     },

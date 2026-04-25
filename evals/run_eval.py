@@ -1,62 +1,77 @@
-"""Core eval: run the agent N times per case, score with rule + judge, report."""
-import asyncio
+"""Core eval: run the agent N times per case, score with rule + judges, report."""
 import time
 
-from agent import SearchAgent
+import db
+from agent import SYSTEM_PROMPT, SearchAgent
 from data import dataset, reference_output
-from judge import CorrectnessJudge
+from judge import FAITHFULNESS_CRITERION, CorrectnessJudge, FaithfulnessJudge, render_trace
 from report import md_escape, timestamp, write_report
 
 TRIALS = 3
-BRAVE_RATE_LIMIT_DELAY = 1.1  # Brave free tier ≈ 1 req/sec
 
 
-def _summarize(results: list[dict], elapsed: float) -> str:
+def _crit_totals(results, key):
+    p = sum(sum(c["pass_n"] for c in r[key]) for r in results)
+    t = sum(sum(c["total"] for c in r[key]) for r in results)
+    conf = sum(sum(c["conf_sum"] for c in r[key]) for r in results)
+    return p, t, conf
+
+
+def _avg_conf(stat):
+    return stat["conf_sum"] / stat["total"] if stat["total"] else 0
+
+
+def _summarize(results, elapsed):
     rule_pass = sum(r["rule_pass"] for r in results)
     rule_total = sum(r["rule_total"] for r in results)
-    case_pass = sum(r["judge_pass"] for r in results)
-    case_total = sum(r["judge_total"] for r in results)
-    crit_pass = sum(sum(c["pass_n"] for c in r["criteria_stats"]) for r in results)
-    crit_total = sum(sum(c["total"] for c in r["criteria_stats"]) for r in results)
+    case_pass = sum(r["correctness_case_pass"] for r in results)
+    faith_case_pass = sum(r["faithfulness_case_pass"] for r in results)
+    case_total = sum(r["trials"] for r in results)
+    c_crit_p, c_crit_t, c_crit_conf = _crit_totals(results, "correctness_criteria_stats")
+    c_case_conf = sum(r["correctness_case_conf_avg"] for r in results) / len(results) if results else 0
+    f_case_conf = sum(r["faithfulness_case_conf_avg"] for r in results) / len(results) if results else 0
 
-    rule_avg = rule_pass / rule_total if rule_total else 0
-    case_avg = case_pass / case_total if case_total else 0
-    crit_avg = crit_pass / crit_total if crit_total else 0
+    def pct(p, t):
+        return f"{p}/{t} ({(p / t if t else 0):.0%})"
+
+    def conf(total_conf, total_n):
+        return f"{(total_conf / total_n if total_n else 0):.1f}"
+
     ts = timestamp()
-
     lines = [
-        f"# Eval Report — {ts}",
+        f"# Eval Report -- {ts}",
         "",
         "## Summary",
         "",
         f"- **Trials per case:** {TRIALS}",
         f"- **Cases:** {len(results)}",
-        f"- **Rule-based pass rate:** {rule_pass}/{rule_total} ({rule_avg:.0%})",
-        f"- **Judge case pass rate (all criteria pass):** {case_pass}/{case_total} ({case_avg:.0%})",
-        f"- **Judge per-criterion pass rate:** {crit_pass}/{crit_total} ({crit_avg:.0%})",
+        f"- **Rule-based pass rate:** {pct(rule_pass, rule_total)}",
+        f"- **Correctness case pass rate (all criteria pass):** {pct(case_pass, case_total)} (avg conf {c_case_conf:.1f})",
+        f"- **Correctness per-criterion pass rate:** {pct(c_crit_p, c_crit_t)} (avg conf {conf(c_crit_conf, c_crit_t)})",
+        f"- **Faithfulness pass rate:** {pct(faith_case_pass, case_total)} (avg conf {f_case_conf:.1f})",
         f"- **Total time:** {elapsed:.2f}s",
         "",
         "## Per-case results",
         "",
-        "| # | Difficulty | Rule | Case pass | Criteria pass | Input |",
-        "|---|------------|------|-----------|---------------|-------|",
+        "| # | Difficulty | Rule | Correct (conf) | Faithful (conf) | Evidence | Input |",
+        "|---|------------|------|----------------|-----------------|----------|-------|",
     ]
     for i, r in enumerate(results, 1):
         difficulty = next((t for t in r["tags"] if t in ("simple", "medium", "hard")), "?")
         rule = f"{r['rule_pass']}/{r['rule_total']}" if r["rule_total"] else "n/a"
-        case_ratio = f"{r['judge_pass']}/{r['judge_total']}"
-        crit_p = sum(c["pass_n"] for c in r["criteria_stats"])
-        crit_t = sum(c["total"] for c in r["criteria_stats"])
         lines.append(
-            f"| {i} | {difficulty} | {rule} | {case_ratio} | {crit_p}/{crit_t} | {md_escape(r['input'])[:120]} |"
+            f"| {i} | {difficulty} | {rule} "
+            f"| {r['correctness_case_pass']}/{r['trials']} ({r['correctness_case_conf_avg']:.0f}) "
+            f"| {r['faithfulness_case_pass']}/{r['trials']} ({r['faithfulness_case_conf_avg']:.0f}) "
+            f"| {r['evidence_len']} "
+            f"| {md_escape(r['input'])[:100]} |"
         )
 
     lines += ["", "## Case details", ""]
     for i, r in enumerate(results, 1):
         difficulty = next((t for t in r["tags"] if t in ("simple", "medium", "hard")), "?")
-        rule = f"{r['rule_pass']}/{r['rule_total']}" if r["rule_total"] else "n/a"
         lines += [
-            f"### Case {i} — {difficulty} (rule {rule}, case pass {r['judge_pass']}/{r['judge_total']})",
+            f"### Case {i} -- {difficulty}",
             "",
             f"**Input:** {r['input']}",
             "",
@@ -66,27 +81,55 @@ def _summarize(results: list[dict], elapsed: float) -> str:
             r["output"],
             "```",
             "",
-            "**Per-criterion pass rates:**",
+            f"**Correctness:** case pass {r['correctness_case_pass']}/{r['trials']} "
+            f"(avg conf {r['correctness_case_conf_avg']:.1f})",
             "",
-            "| # | Criterion | Pass rate |",
-            "|---|-----------|-----------|",
+            "| # | Criterion | Pass rate | Avg conf |",
+            "|---|-----------|-----------|----------|",
             *[
-                f"| {j + 1} | {md_escape(c['criterion'])} | {c['pass_n']}/{c['total']} |"
-                for j, c in enumerate(r["criteria_stats"])
+                f"| {j + 1} | {md_escape(c['criterion'])} | {c['pass_n']}/{c['total']} | {_avg_conf(c):.1f} |"
+                for j, c in enumerate(r["correctness_criteria_stats"])
             ],
             "",
-            f"**Judge reasoning:** {r['judge_reasoning']}",
+            f"**Faithfulness:** {r['faithfulness_case_pass']}/{r['trials']} "
+            f"(avg conf {r['faithfulness_case_conf_avg']:.1f}, "
+            f"evidence: {r['evidence_len']} searches on last trial)",
+            "",
+            f"**Correctness reasoning:** {r['correctness_reasoning']}",
+            "",
+            f"**Faithfulness reasoning:** {r['faithfulness_reasoning']}",
             "",
         ]
     return "\n".join(lines)
 
 
-async def run_dataset_eval(indices: list[int] | None = None) -> None:
+async def run_dataset_eval(indices=None):
     agent = SearchAgent()
     await agent.setup()
-    judge = CorrectnessJudge()
+    correctness = CorrectnessJudge()
+    faithfulness = FaithfulnessJudge()
     results = []
     start = time.perf_counter()
+
+    conn = db.connect()
+    db.seed_cases_from_dataset(conn, dataset, FAITHFULNESS_CRITERION)
+    run_id = db.insert_run(
+        conn,
+        agent_model=agent.model,
+        agent_system_prompt=SYSTEM_PROMPT,
+        trials_per_case=TRIALS,
+        judge_models={
+            correctness.name: correctness.model,
+            faithfulness.name: faithfulness.model,
+        },
+        judge_prompt_versions={
+            correctness.name: CorrectnessJudge.PROMPT_VERSION,
+            faithfulness.name: FaithfulnessJudge.PROMPT_VERSION,
+        },
+        judge_temperatures={correctness.name: 0.0, faithfulness.name: 0.0},
+    )
+    print(f"SQLite run_id={run_id}")
+    faith_crit_id = db.get_faithfulness_criterion_id(conn)
 
     cases = (
         [(i, dataset[i]) for i in indices] if indices is not None
@@ -95,35 +138,109 @@ async def run_dataset_eval(indices: list[int] | None = None) -> None:
     for idx, data in cases:
         print(f"\n--- {data['tags']} ---")
         print(f"Q: {data['input']}")
-        rule_pass = rule_total = judge_pass = 0
-        outputs, reasonings = [], []
-        criteria_stats = [
-            {"criterion": c, "pass_n": 0, "total": 0} for c in data["criteria"]
+        case_id = db.get_case_id(conn, data["input"])
+        correctness_crit_ids = db.get_correctness_criterion_ids(conn, case_id)
+        rule_pass = rule_total = 0
+        correctness_case_pass = faithfulness_case_pass = 0
+        c_case_conf_sum = f_case_conf_sum = 0
+        outputs, c_reasonings, f_reasonings = [], [], []
+        last_evidence_len = 0
+        correctness_stats = [
+            {"criterion": c, "pass_n": 0, "total": 0, "conf_sum": 0}
+            for c in data["criteria"]
+        ]
+        faithfulness_stats = [
+            {"criterion": c, "pass_n": 0, "total": 0, "conf_sum": 0}
+            for c in faithfulness.criteria
         ]
         ref = reference_output(idx)
 
         for t in range(TRIALS):
-            if t > 0:
-                await asyncio.sleep(BRAVE_RATE_LIMIT_DELAY)
-            output = await agent.ask(data["input"])
-            print(f"[trial {t + 1}] {output}")
-            outputs.append(output)
+            run = await agent.ask(data["input"])
+            print(f"[trial {t + 1}] {run.output}")
+            print(f"[trial {t + 1}] evidence: {len(run.evidence)} search(es)")
+            outputs.append(run.output)
+            last_evidence_len = len(run.evidence)
+
+            trace_id = db.insert_trace(conn, content=render_trace(run.evidence))
+            trial_id = db.insert_trial(
+                conn, run_id=run_id, case_id=case_id,
+                trial_idx=t + 1, output=run.output,
+                trace_id=trace_id,
+                latency_ms=run.latency_ms,
+                tokens_in=run.tokens_in,
+                tokens_out=run.tokens_out,
+                cost_usd=run.cost_usd,
+            )
+            for call_idx, call in enumerate(run.evidence, 1):
+                db.insert_tool_call(
+                    conn, trial_id=trial_id, idx=call_idx,
+                    tool_name="web_search",
+                    args={"query": call.query},
+                    result=call.results,
+                    latency_ms=call.latency_ms,
+                )
+
             if data.get("expected"):
                 rule_total += 1
-                if data["expected"] in output:
+                if data["expected"] in run.output:
                     rule_pass += 1
-            result = judge.evaluate(data["input"], output, data["criteria"], ref)
-            print(f"[trial {t + 1}] judge: {result.label} (conf {result.confidence})")
-            for j, cr in enumerate(result.per_criterion):
-                criteria_stats[j]["total"] += 1
+
+            c_res = correctness.evaluate(data["input"], run.output, data["criteria"], ref)
+            print(f"[trial {t + 1}] correctness: {c_res.label} (conf {c_res.confidence})")
+            for j, cr in enumerate(c_res.per_criterion):
+                correctness_stats[j]["total"] += 1
+                correctness_stats[j]["conf_sum"] += cr.confidence
                 if cr.label == "pass":
-                    criteria_stats[j]["pass_n"] += 1
-                print(f"    [{j + 1}] {cr.label} (conf {cr.confidence}) — {cr.reasoning}")
-            reasonings.append(
-                f"T{t + 1} ({result.label}, conf {result.confidence}): {result.reasoning}"
+                    correctness_stats[j]["pass_n"] += 1
+                print(f"    C[{j + 1}] {cr.label} (conf {cr.confidence}) -- {cr.reasoning}")
+                # Judge metrics belong to the call (1 per trial), not per criterion.
+                # Attach to first row only so SUM() gives real call totals.
+                first = j == 0
+                db.insert_criterion_verdict(
+                    conn, run_id=run_id, trial_id=trial_id,
+                    criterion_id=correctness_crit_ids[j],
+                    judge_name=correctness.name, judge_model=correctness.model,
+                    label=cr.label, confidence=cr.confidence, reasoning=cr.reasoning,
+                    judge_latency_ms=c_res.latency_ms if first else None,
+                    judge_tokens_in=c_res.tokens_in if first else None,
+                    judge_tokens_out=c_res.tokens_out if first else None,
+                    judge_cost_usd=c_res.cost_usd if first else None,
+                )
+            c_reasonings.append(
+                f"T{t + 1} ({c_res.label}, conf {c_res.confidence}): {c_res.reasoning}"
             )
-            if result.label == "pass":
-                judge_pass += 1
+            c_case_conf_sum += c_res.confidence
+            if c_res.label == "pass":
+                correctness_case_pass += 1
+
+            f_res = faithfulness.evaluate(data["input"], run.output, run.evidence)
+            print(f"[trial {t + 1}] faithfulness: {f_res.label} (conf {f_res.confidence})")
+            for j, cr in enumerate(f_res.per_criterion):
+                faithfulness_stats[j]["total"] += 1
+                faithfulness_stats[j]["conf_sum"] += cr.confidence
+                if cr.label == "pass":
+                    faithfulness_stats[j]["pass_n"] += 1
+                print(f"    F[{j + 1}] {cr.label} (conf {cr.confidence}) -- {cr.reasoning}")
+                first = j == 0
+                db.insert_criterion_verdict(
+                    conn, run_id=run_id, trial_id=trial_id,
+                    criterion_id=faith_crit_id,
+                    judge_name=faithfulness.name, judge_model=faithfulness.model,
+                    label=cr.label, confidence=cr.confidence, reasoning=cr.reasoning,
+                    judge_latency_ms=f_res.latency_ms if first else None,
+                    judge_tokens_in=f_res.tokens_in if first else None,
+                    judge_tokens_out=f_res.tokens_out if first else None,
+                    judge_cost_usd=f_res.cost_usd if first else None,
+                )
+            f_reasonings.append(
+                f"T{t + 1} ({f_res.label}, conf {f_res.confidence}): {f_res.reasoning}"
+            )
+            f_case_conf_sum += f_res.confidence
+            if f_res.label == "pass":
+                faithfulness_case_pass += 1
+
+        conn.commit()  # commit per case for crash safety
 
         results.append({
             "input": data["input"],
@@ -132,12 +249,20 @@ async def run_dataset_eval(indices: list[int] | None = None) -> None:
             "criteria": data["criteria"],
             "rule_pass": rule_pass,
             "rule_total": rule_total,
-            "judge_pass": judge_pass,
-            "judge_total": TRIALS,
-            "criteria_stats": criteria_stats,
-            "judge_reasoning": " || ".join(reasonings),
+            "trials": TRIALS,
+            "correctness_case_pass": correctness_case_pass,
+            "faithfulness_case_pass": faithfulness_case_pass,
+            "correctness_case_conf_avg": c_case_conf_sum / TRIALS,
+            "faithfulness_case_conf_avg": f_case_conf_sum / TRIALS,
+            "correctness_criteria_stats": correctness_stats,
+            "faithfulness_criteria_stats": faithfulness_stats,
+            "correctness_reasoning": " || ".join(c_reasonings),
+            "faithfulness_reasoning": " || ".join(f_reasonings),
+            "evidence_len": last_evidence_len,
         })
 
+    db.finalize_run(conn, run_id)
+    conn.close()
     summary = _summarize(results, time.perf_counter() - start)
     print("\n\n" + summary)
     path = write_report("results", summary)

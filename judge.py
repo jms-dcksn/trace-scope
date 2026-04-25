@@ -4,11 +4,14 @@ Each criterion gets its own pass/fail + confidence + reasoning. The overall
 case label is pass iff every criterion passes. Structured so a second judge
 (e.g. faithfulness) can subclass BaseJudge and only override name + prompt.
 """
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
+
+from costs import cost_usd
 
 
 class CriterionVerdict(BaseModel):
@@ -33,6 +36,10 @@ class CriterionResult:
 @dataclass
 class JudgeResult:
     per_criterion: list[CriterionResult]
+    latency_ms: int | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
 
     @property
     def label(self) -> str:
@@ -62,15 +69,33 @@ class BaseJudge:
 
     def __init__(self, model: str = "gpt-5.4"):
         self.model = model
+        # include_raw=True so we can read usage_metadata for token/cost accounting.
         self._llm = ChatOpenAI(
             model=model,
             temperature=0,
-        ).with_structured_output(JudgeVerdict)
+        ).with_structured_output(JudgeVerdict, include_raw=True)
 
     def build_prompt(self, **kwargs) -> str:
         raise NotImplementedError
 
-    def _parse(self, criteria: list[str], verdict: JudgeVerdict | None) -> JudgeResult:
+    def _invoke(self, prompt: str) -> tuple[JudgeVerdict | None, dict]:
+        """Run the LLM. Returns (parsed_verdict, metrics)."""
+        t0 = time.perf_counter()
+        response = self._llm.invoke(prompt)
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        raw = response.get("raw") if isinstance(response, dict) else None
+        parsed = response.get("parsed") if isinstance(response, dict) else response
+        usage = getattr(raw, "usage_metadata", None) or {}
+        tokens_in = usage.get("input_tokens")
+        tokens_out = usage.get("output_tokens")
+        return parsed, {
+            "latency_ms": elapsed_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": cost_usd(self.model, tokens_in, tokens_out),
+        }
+
+    def _parse(self, criteria: list[str], verdict: JudgeVerdict | None, metrics: dict | None = None) -> JudgeResult:
         by_idx = {v.index: v for v in (verdict.verdicts if verdict else [])}
         results: list[CriterionResult] = []
         for i, c in enumerate(criteria, 1):
@@ -86,13 +111,22 @@ class BaseJudge:
             else:
                 label = "unknown"
             results.append(CriterionResult(c, label, conf, v.reasoning))
-        return JudgeResult(results)
+        m = metrics or {}
+        return JudgeResult(
+            results,
+            latency_ms=m.get("latency_ms"),
+            tokens_in=m.get("tokens_in"),
+            tokens_out=m.get("tokens_out"),
+            cost_usd=m.get("cost_usd"),
+        )
 
 
 class CorrectnessJudge(BaseJudge):
     """Scores output correctness against the supplied criteria."""
 
     name = "correctness"
+    # Bump manually when the prompt changes — config_hash depends on this.
+    PROMPT_VERSION = "v1"
 
     def build_prompt(
         self,
@@ -146,7 +180,78 @@ Return exactly one verdict per criterion.
         criteria: list[str],
         reference_output: str | None = None,
     ) -> JudgeResult:
-        verdict = self._llm.invoke(
+        verdict, metrics = self._invoke(
             self.build_prompt(agent_input, agent_output, criteria, reference_output)
         )
-        return self._parse(criteria, verdict)
+        return self._parse(criteria, verdict, metrics)
+
+
+FAITHFULNESS_CRITERION = "The response is grounded in the retrieved evidence."
+
+
+def render_trace(evidence: list) -> str:
+    """The trace string shown to the faithfulness judge — also persisted to traces."""
+    if not evidence:
+        return "(no searches were performed)"
+    return "\n\n".join(
+        f"[search {i + 1}] query: {e.query}\n{e.results}"
+        for i, e in enumerate(evidence)
+    )
+
+
+class FaithfulnessJudge(BaseJudge):
+    """Single pass/fail verdict on whether the response is grounded in evidence."""
+
+    name = "faithfulness"
+    PROMPT_VERSION = "v1"
+    criteria = [FAITHFULNESS_CRITERION]
+
+    def build_prompt(
+        self,
+        agent_input: str,
+        agent_output: str,
+        evidence: list,  # list[SearchCall]
+    ) -> str:
+        evidence_block = render_trace(evidence)
+        return f'''
+The current date is {datetime.now().isoformat(timespec='seconds')}.
+You are judging whether an agent response is FAITHFUL to the evidence it
+retrieved from web search. Evidence is AUTHORITATIVE for grounding: if a
+material claim in the response does not appear in the evidence, the
+response is not grounded, regardless of whether the claim is true in the
+world. Do not use your own background knowledge to confirm or refute
+claims. Fabricated quotes, unsupported statute/bill numbers, and
+citations that do not appear in the evidence all fail this check.
+
+Agent input:
+"""
+{agent_input}
+"""
+
+Agent response:
+"""
+{agent_output}
+"""
+
+Retrieved evidence (all tool calls the agent made, in order):
+"""
+{evidence_block}
+"""
+
+Return a single verdict with:
+- "index": 1
+- "score": 1 for PASS (response is grounded in evidence), 0 for FAIL
+- "confidence": integer 0-100 (100 = supremely confident, 0 = pure guess)
+- "reasoning": one-sentence justification, citing which search result supports or contradicts
+'''
+
+    def evaluate(
+        self,
+        agent_input: str,
+        agent_output: str,
+        evidence: list,
+    ) -> JudgeResult:
+        verdict, metrics = self._invoke(
+            self.build_prompt(agent_input, agent_output, evidence)
+        )
+        return self._parse(self.criteria, verdict, metrics)
