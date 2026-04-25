@@ -1,4 +1,4 @@
-# agent-eval-phase-1
+# trace-scope
 
 An eval harness for a Tavily-search LangChain agent. SQLite is the system of record; markdown reports are rendered from it.
 
