@@ -8,7 +8,6 @@ labels exist.
 import time
 
 import db
-from data import dataset, reference_output
 from judge import CorrectnessJudge, FaithfulnessJudge
 from report import write_report
 
@@ -34,10 +33,21 @@ def _eval_correctness(judge, conn, fixed_output_id: int) -> dict[int, str]:
     ).fetchall()
     criterion_ids = [r["criterion_id"] for r in crit_rows]
     criteria = [r["text"] for r in crit_rows]
-    case_idx = conn.execute(
-        "SELECT COUNT(*) FROM cases WHERE case_id < ?", (row["case_id"],)
-    ).fetchone()[0]
-    ref = reference_output(case_idx)
+    # Pick a pass-labeled fixed_output OTHER than the row under test. Otherwise
+    # TP rows on cases with only one pass example degenerate into "does this
+    # output match itself?" — which inflates F1.
+    ref_row = conn.execute(
+        """
+        SELECT fo.agent_output FROM fixed_outputs fo
+        JOIN gold_labels g ON g.fixed_output_id = fo.fixed_output_id
+        WHERE fo.case_id = ?
+          AND fo.fixed_output_id != ?
+          AND g.judge_name = 'correctness' AND g.label = 1
+        ORDER BY fo.fixed_output_id LIMIT 1
+        """,
+        (row["case_id"], fixed_output_id),
+    ).fetchone()
+    ref = ref_row["agent_output"] if ref_row else None
     result = judge.evaluate(row["input"], row["agent_output"], criteria, ref)
     return {criterion_ids[i]: cr.label for i, cr in enumerate(result.per_criterion)}
 
