@@ -122,6 +122,34 @@ def run_judge_precision_recall(judge_name: str = "correctness", model: str = "gp
     print(f"Precision={precision:.2%}  Recall={recall:.2%}  F1={f1:.2%}  "
           f"Accuracy={accuracy:.2%}  ({elapsed:.1f}s)")
 
+    # Persist results so the UI can render without re-running the judge.
+    cur = conn.execute(
+        """
+        INSERT INTO judge_pr_runs (
+            judge_name, judge_model, prompt_version, started_at, elapsed_ms,
+            tp, fp, tn, fn, total, auto_labeled,
+            precision_pct, recall_pct, f1_pct, accuracy_pct
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            judge_name, model, judge.PROMPT_VERSION, db.now(), int(elapsed * 1000),
+            tp, fp, tn, fn, n, auto_labeled,
+            precision, recall, f1, accuracy,
+        ),
+    )
+    pr_run_id = cur.lastrowid
+    conn.executemany(
+        """
+        INSERT INTO judge_pr_rows
+            (judge_pr_run_id, fixed_output_id, criterion_id, case_id,
+             gold, predicted, outcome, labeler)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [(pr_run_id, fo, cid, ca, g, p, o, lab) for fo, cid, ca, g, p, o, lab in rows],
+    )
+    conn.commit()
+    print(f"Saved as judge_pr_run_id={pr_run_id}")
+
     lines = [
         f"# Judge Precision/Recall -- {judge_name}",
         "",
