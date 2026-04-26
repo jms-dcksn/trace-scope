@@ -21,6 +21,9 @@ wheels/
 # Local planning
 PLAN.md
 
+# Brainstorming companion
+.superpowers/
+
 # SQLite
 evals.db
 evals.db-journal
