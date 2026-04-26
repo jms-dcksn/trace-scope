@@ -60,6 +60,12 @@ dataset = [
             "correctly identifies 2023 as a recovery year relative to 2022",
         ],
         "tags": ["financial", "medium"],
+        "expected_tools": {
+            "min_calls": 1,
+            "max_calls": 5,
+            "must_include_substrings": ["S&P", "2023"],
+            "no_duplicate_queries": True,
+        },
     },
 
     # --- Super tough ---
@@ -72,6 +78,12 @@ dataset = [
             "cites two specific, real policy recommendations relevant to finance",
         ],
         "tags": ["research", "hard"],
+        "expected_tools": {
+            "min_calls": 1,
+            "max_calls": 6,
+            "must_include_substrings": ["IPCC"],
+            "no_duplicate_queries": True,
+        },
     },
     {
         "input": (
@@ -86,6 +98,12 @@ dataset = [
             "answer is scoped to US insurance, not generic AI regulation",
         ],
         "tags": ["domain", "regulatory", "hard"],
+        "expected_tools": {
+            "min_calls": 2,
+            "max_calls": 8,
+            "must_include_substrings": ["insur"],
+            "no_duplicate_queries": True,
+        },
     },
     {
         "input": (

@@ -109,9 +109,10 @@ def render_compare(run_a: int, run_b: int) -> str:
                 f"| [{b_lo:.0%},{b_hi:.0%}] |"
             )
 
-        # Rollups per judge.
+        # Rollups per judge — enumerate distinct judges across both runs.
+        judges = sorted({k[2] for k in (set(a) | set(b))})
         lines += ["", "## Rollup by judge", "", "| Judge | A | B | Δ |", "|-------|---|---|---|"]
-        for judge in ("correctness", "faithfulness"):
+        for judge in judges:
             a_p_n = sum(v["pass_n"] for k, v in a.items() if k[2] == judge)
             a_tot = sum(v["total"] for k, v in a.items() if k[2] == judge)
             b_p_n = sum(v["pass_n"] for k, v in b.items() if k[2] == judge)

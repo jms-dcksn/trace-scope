@@ -3,21 +3,26 @@
 Each criterion gets its own pass/fail + confidence + reasoning. The overall
 case label is pass iff every criterion passes. Structured so a second judge
 (e.g. faithfulness) can subclass BaseJudge and only override name + prompt.
+
+Prompt templates live in the `judge_prompts` table. On first init for a
+given judge, the in-code default below is seeded as version v1 and marked
+active. Edits happen in the UI; the judge code only renders placeholders.
 """
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
+import db
 from costs import cost_usd
 
 
 class CriterionVerdict(BaseModel):
-    index: int  # 1-based, matches the numbered criterion in the prompt
-    score: int  # 1 = pass, 0 = fail
-    confidence: int  # 0-100
+    index: int
+    score: int
+    confidence: int
     reasoning: str
 
 
@@ -51,7 +56,6 @@ class JudgeResult:
 
     @property
     def confidence(self) -> int:
-        # Overall confidence = weakest link.
         return min((c.confidence for c in self.per_criterion), default=0)
 
     @property
@@ -62,24 +66,139 @@ class JudgeResult:
         )
 
 
-class BaseJudge:
-    """Shared LLM invocation + per-criterion parsing. Subclasses supply a prompt."""
+# In-code defaults seeded as v1 the first time a judge is constructed.
+# Placeholders are filled by str.format_map() in build_prompt().
 
+CORRECTNESS_TEMPLATE_V1 = '''The current date is {current_date}.
+You are judging the correctness of an agent response against a list of
+criteria. Evaluate each criterion independently.
+
+Criteria:
+{numbered_criteria}
+
+Agent input:
+"""
+{agent_input}
+"""
+
+Agent response:
+"""
+{agent_output}
+"""
+{reference_section}
+For each criterion, return an entry in "verdicts" with:
+- "index": the 1-based criterion number
+- "score": 1 for PASS, 0 for FAIL
+- "confidence": integer 0-100 (100 = supremely confident, 0 = pure guess)
+- "reasoning": one-sentence justification
+
+Return exactly one verdict per criterion.
+'''
+
+FAITHFULNESS_TEMPLATE_V1 = '''The current date is {current_date}.
+You are judging whether an agent response is FAITHFUL to the evidence it
+retrieved from web search. Evidence is AUTHORITATIVE for grounding: if a
+material claim in the response does not appear in the evidence, the
+response is not grounded, regardless of whether the claim is true in the
+world. Do not use your own background knowledge to confirm or refute
+claims. Fabricated quotes, unsupported statute/bill numbers, and
+citations that do not appear in the evidence all fail this check.
+
+Agent input:
+"""
+{agent_input}
+"""
+
+Agent response:
+"""
+{agent_output}
+"""
+
+Retrieved evidence (all tool calls the agent made, in order):
+"""
+{evidence_block}
+"""
+
+Return a single verdict with:
+- "index": 1
+- "score": 1 for PASS (response is grounded in evidence), 0 for FAIL
+- "confidence": integer 0-100 (100 = supremely confident, 0 = pure guess)
+- "reasoning": one-sentence justification, citing which search result supports or contradicts
+'''
+
+
+_DEFAULT_TEMPLATES = {
+    "correctness": ("v1", CORRECTNESS_TEMPLATE_V1),
+    "faithfulness": ("v1", FAITHFULNESS_TEMPLATE_V1),
+}
+
+
+def _ensure_seeded(judge_name: str) -> None:
+    """Idempotent: seed the in-code default as v1 + active if no rows exist for this judge."""
+    if judge_name not in _DEFAULT_TEMPLATES:
+        return
+    conn = db.connect()
+    try:
+        existing = conn.execute(
+            "SELECT 1 FROM judge_prompts WHERE judge_name = ? LIMIT 1",
+            (judge_name,),
+        ).fetchone()
+        if existing:
+            return
+        version, template = _DEFAULT_TEMPLATES[judge_name]
+        ts = db.now()
+        conn.execute(
+            """
+            INSERT INTO judge_prompts
+              (judge_name, version, template, notes, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            """,
+            (judge_name, version, template, "seeded from in-code default", ts, ts),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_active_template(judge_name: str) -> tuple[str, str]:
+    """Returns (version, template). Seeds the default if nothing exists."""
+    _ensure_seeded(judge_name)
+    conn = db.connect()
+    try:
+        row = conn.execute(
+            "SELECT version, template FROM judge_prompts WHERE judge_name = ? AND is_active = 1",
+            (judge_name,),
+        ).fetchone()
+        if row is None:
+            # Edge: rows exist but none active. Fall back to most recent.
+            row = conn.execute(
+                "SELECT version, template FROM judge_prompts WHERE judge_name = ? "
+                "ORDER BY judge_prompt_id DESC LIMIT 1",
+                (judge_name,),
+            ).fetchone()
+        if row is None:
+            # No DB rows and no default — shouldn't happen for known judges.
+            raise RuntimeError(f"no prompt available for judge {judge_name!r}")
+        return row["version"], row["template"]
+    finally:
+        conn.close()
+
+
+class BaseJudge:
     name: str = "base"
 
     def __init__(self, model: str = "gpt-5.4"):
         self.model = model
-        # include_raw=True so we can read usage_metadata for token/cost accounting.
         self._llm = ChatOpenAI(
             model=model,
             temperature=0,
         ).with_structured_output(JudgeVerdict, include_raw=True)
+        self.PROMPT_VERSION, self._template = _load_active_template(self.name)
 
-    def build_prompt(self, **kwargs) -> str:
-        raise NotImplementedError
+    def render(self, **placeholders: str) -> str:
+        return self._template.format_map(placeholders)
 
     def _invoke(self, prompt: str) -> tuple[JudgeVerdict | None, dict]:
-        """Run the LLM. Returns (parsed_verdict, metrics)."""
         t0 = time.perf_counter()
         response = self._llm.invoke(prompt)
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -122,11 +241,7 @@ class BaseJudge:
 
 
 class CorrectnessJudge(BaseJudge):
-    """Scores output correctness against the supplied criteria."""
-
     name = "correctness"
-    # Bump manually when the prompt changes — config_hash depends on this.
-    PROMPT_VERSION = "v1"
 
     def build_prompt(
         self,
@@ -138,40 +253,19 @@ class CorrectnessJudge(BaseJudge):
         numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(criteria))
         reference_section = ""
         if reference_output:
-            reference_section = f'''
-Reference output (an example of a correct, high-quality response to this
-input — treat as a guide to what "correct" looks like, not the only valid
-phrasing; the agent response does not need to match it verbatim):
-"""
-{reference_output}
-"""
-'''
-        return f'''
-The current date is {datetime.now().isoformat(timespec='seconds')}.
-You are judging the correctness of an agent response against a list of
-criteria. Evaluate each criterion independently.
-
-Criteria:
-{numbered}
-
-Agent input:
-"""
-{agent_input}
-"""
-
-Agent response:
-"""
-{agent_output}
-"""
-{reference_section}
-For each criterion, return an entry in "verdicts" with:
-- "index": the 1-based criterion number
-- "score": 1 for PASS, 0 for FAIL
-- "confidence": integer 0-100 (100 = supremely confident, 0 = pure guess)
-- "reasoning": one-sentence justification
-
-Return exactly one verdict per criterion.
-'''
+            reference_section = (
+                '\nReference output (an example of a correct, high-quality response to this '
+                'input — treat as a guide to what "correct" looks like, not the only valid '
+                'phrasing; the agent response does not need to match it verbatim):\n'
+                f'"""\n{reference_output}\n"""\n'
+            )
+        return self.render(
+            current_date=datetime.now().isoformat(timespec="seconds"),
+            numbered_criteria=numbered,
+            agent_input=agent_input,
+            agent_output=agent_output,
+            reference_section=reference_section,
+        )
 
     def evaluate(
         self,
@@ -190,7 +284,6 @@ FAITHFULNESS_CRITERION = "The response is grounded in the retrieved evidence."
 
 
 def render_trace(evidence: list) -> str:
-    """The trace string shown to the faithfulness judge — also persisted to traces."""
     if not evidence:
         return "(no searches were performed)"
     return "\n\n".join(
@@ -199,51 +292,53 @@ def render_trace(evidence: list) -> str:
     )
 
 
-class FaithfulnessJudge(BaseJudge):
-    """Single pass/fail verdict on whether the response is grounded in evidence."""
+class ToolUseJudge:
+    """Trajectory judge: scores a trial's tool_calls against case_expectations.
 
-    name = "faithfulness"
+    Rule-based only — no LLM. Each criterion is a deterministic check
+    (counts, substrings, duplicates). Semantic checks are deferred; when
+    added, they would inherit BaseJudge instead and bump PROMPT_VERSION.
+    """
+    name = "tool_use"
     PROMPT_VERSION = "v1"
+
+    def __init__(self, model: str = "rule"):
+        self.model = model
+
+    def evaluate(self, queries: list[str], payload: dict) -> JudgeResult:
+        from tool_use import evaluate_spec, expand_payload
+        t0 = time.perf_counter()
+        specs = expand_payload(payload)
+        results: list[CriterionResult] = []
+        for spec in specs:
+            label, reasoning = evaluate_spec(spec, queries)
+            results.append(CriterionResult(spec.text, label, 100, reasoning))
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        return JudgeResult(
+            results,
+            latency_ms=elapsed_ms,
+            tokens_in=None,
+            tokens_out=None,
+            cost_usd=0.0,
+        )
+
+
+class FaithfulnessJudge(BaseJudge):
+    name = "faithfulness"
     criteria = [FAITHFULNESS_CRITERION]
 
     def build_prompt(
         self,
         agent_input: str,
         agent_output: str,
-        evidence: list,  # list[SearchCall]
+        evidence: list,
     ) -> str:
-        evidence_block = render_trace(evidence)
-        return f'''
-The current date is {datetime.now().isoformat(timespec='seconds')}.
-You are judging whether an agent response is FAITHFUL to the evidence it
-retrieved from web search. Evidence is AUTHORITATIVE for grounding: if a
-material claim in the response does not appear in the evidence, the
-response is not grounded, regardless of whether the claim is true in the
-world. Do not use your own background knowledge to confirm or refute
-claims. Fabricated quotes, unsupported statute/bill numbers, and
-citations that do not appear in the evidence all fail this check.
-
-Agent input:
-"""
-{agent_input}
-"""
-
-Agent response:
-"""
-{agent_output}
-"""
-
-Retrieved evidence (all tool calls the agent made, in order):
-"""
-{evidence_block}
-"""
-
-Return a single verdict with:
-- "index": 1
-- "score": 1 for PASS (response is grounded in evidence), 0 for FAIL
-- "confidence": integer 0-100 (100 = supremely confident, 0 = pure guess)
-- "reasoning": one-sentence justification, citing which search result supports or contradicts
-'''
+        return self.render(
+            current_date=datetime.now().isoformat(timespec="seconds"),
+            agent_input=agent_input,
+            agent_output=agent_output,
+            evidence_block=render_trace(evidence),
+        )
 
     def evaluate(
         self,

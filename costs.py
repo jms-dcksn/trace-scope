@@ -6,9 +6,9 @@ live is overkill. Keys are the OpenAI model IDs without provider prefix.
 
 # (input_per_1k_usd, output_per_1k_usd) — placeholders; update as needed.
 MODEL_COSTS: dict[str, tuple[float, float]] = {
-    "gpt-5.4": (0.005, 0.015),
-    "gpt-5.4-mini": (0.0006, 0.0024),
-    "gpt-5.4-nano": (0.0001, 0.0004),
+    "gpt-5.4": (0.0025, 0.015),
+    "gpt-5.4-mini": (0.00075, 0.0045),
+    "gpt-5.4-nano": (0.0002, 0.00125),
 }
 
 

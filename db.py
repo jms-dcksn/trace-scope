@@ -136,6 +136,78 @@ def seed_cases_from_dataset(
     conn.commit()
 
 
+def seed_case_expectations(
+    conn: sqlite3.Connection,
+    dataset: list[dict[str, Any]],
+) -> None:
+    """Upsert tool_use expectations + materialize matching criteria rows.
+
+    For each dataset case carrying `expected_tools`, store the payload in
+    case_expectations (kind='tool_use') and expand it into criteria rows
+    (judge_name='tool_use') so verdict insertion uses the standard path.
+    """
+    from tool_use import expand_payload
+
+    ts = now()
+    for case in dataset:
+        payload = case.get("expected_tools")
+        if not payload:
+            continue
+        case_id = get_case_id(conn, case["input"])
+        value = json.dumps(payload, sort_keys=True)
+
+        # Upsert case_expectations: there's no UNIQUE constraint, so
+        # delete-then-insert keeps it idempotent on (case_id, kind='tool_use').
+        conn.execute(
+            "DELETE FROM case_expectations WHERE case_id = ? AND kind = 'tool_use'",
+            (case_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO case_expectations (case_id, kind, value, notes, created_at)
+            VALUES (?, 'tool_use', ?, NULL, ?)
+            """,
+            (case_id, value, ts),
+        )
+
+        specs = expand_payload(payload)
+        for idx, spec in enumerate(specs, 1):
+            conn.execute(
+                """
+                INSERT INTO criteria (case_id, judge_name, idx, text)
+                VALUES (?, 'tool_use', ?, ?)
+                ON CONFLICT(case_id, judge_name, idx) DO UPDATE SET text = excluded.text
+                """,
+                (case_id, idx, spec.text),
+            )
+        # Drop trailing tool_use criteria if shrunk (only if unreferenced).
+        conn.execute(
+            """
+            DELETE FROM criteria
+            WHERE case_id = ? AND judge_name = 'tool_use' AND idx > ?
+              AND criterion_id NOT IN (SELECT criterion_id FROM criterion_verdicts)
+            """,
+            (case_id, len(specs)),
+        )
+    conn.commit()
+
+
+def get_tool_use_expectations(conn: sqlite3.Connection, case_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT value FROM case_expectations WHERE case_id = ? AND kind = 'tool_use'",
+        (case_id,),
+    ).fetchone()
+    return json.loads(row["value"]) if row else None
+
+
+def get_tool_use_criterion_ids(conn: sqlite3.Connection, case_id: int) -> list[int]:
+    rows = conn.execute(
+        "SELECT criterion_id FROM criteria WHERE case_id = ? AND judge_name = 'tool_use' ORDER BY idx",
+        (case_id,),
+    ).fetchall()
+    return [r["criterion_id"] for r in rows]
+
+
 def get_case_id(conn: sqlite3.Connection, case_input: str) -> int:
     row = conn.execute("SELECT case_id FROM cases WHERE input = ?", (case_input,)).fetchone()
     if row is None:
@@ -201,9 +273,11 @@ def finalize_run(conn: sqlite3.Connection, run_id: int) -> None:
 
 
 def insert_trace(conn: sqlite3.Connection, *, content: str) -> int:
+    # ~4 chars/token is the standard back-of-envelope.
+    token_count = len(content) // 4
     cur = conn.execute(
-        "INSERT INTO traces (content, created_at) VALUES (?, ?)",
-        (content, now()),
+        "INSERT INTO traces (content, token_count, created_at) VALUES (?, ?, ?)",
+        (content, token_count, now()),
     )
     return cur.lastrowid
 
@@ -220,16 +294,17 @@ def insert_trial(
     tokens_in: int | None = None,
     tokens_out: int | None = None,
     cost_usd: float | None = None,
+    error: str | None = None,
 ) -> int:
     cur = conn.execute(
         """
         INSERT INTO trials (
             run_id, case_id, trial_idx, output, trace_id,
-            latency_ms, tokens_in, tokens_out, cost_usd, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            latency_ms, tokens_in, tokens_out, cost_usd, error, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (run_id, case_id, trial_idx, output, trace_id,
-         latency_ms, tokens_in, tokens_out, cost_usd, now()),
+         latency_ms, tokens_in, tokens_out, cost_usd, error, now()),
     )
     return cur.lastrowid
 
@@ -262,9 +337,11 @@ def seed() -> None:
     conn = connect()
     try:
         seed_cases_from_dataset(conn, dataset, FAITHFULNESS_CRITERION)
+        seed_case_expectations(conn, dataset)
         n_cases = conn.execute("SELECT COUNT(*) AS n FROM cases").fetchone()["n"]
         n_crit = conn.execute("SELECT COUNT(*) AS n FROM criteria").fetchone()["n"]
-        print(f"seeded: {n_cases} cases, {n_crit} criteria -> {_db_path()}")
+        n_exp = conn.execute("SELECT COUNT(*) AS n FROM case_expectations").fetchone()["n"]
+        print(f"seeded: {n_cases} cases, {n_crit} criteria, {n_exp} expectations -> {_db_path()}")
     finally:
         conn.close()
 

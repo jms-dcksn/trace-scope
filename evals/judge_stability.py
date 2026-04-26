@@ -57,7 +57,7 @@ async def run_judge_stability(
         agent_system_prompt=SYSTEM_PROMPT,
         trials_per_case=trials,
         judge_models={judge.name: judge.model},
-        judge_prompt_versions={judge.name: CorrectnessJudge.PROMPT_VERSION},
+        judge_prompt_versions={judge.name: judge.PROMPT_VERSION},
         judge_temperatures={judge.name: 0.0},
         tag="judge-stability",
     )

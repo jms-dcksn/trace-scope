@@ -11,9 +11,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <header className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-3 flex gap-6 items-center">
           <Link href="/" className="font-semibold">Agent Eval</Link>
           <nav className="flex gap-4 text-sm">
+            <Link href="/runs" className="hover:underline">Runs</Link>
             <Link href="/golden" className="hover:underline">Golden Dataset</Link>
             <Link href="/cases" className="hover:underline">Cases</Link>
             <Link href="/judges" className="hover:underline">Judge Health</Link>
+            <Link href="/prompts" className="hover:underline">Prompts</Link>
           </nav>
         </header>
         <main className="px-6 py-6 max-w-6xl mx-auto">{children}</main>

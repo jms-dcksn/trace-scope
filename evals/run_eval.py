@@ -4,7 +4,7 @@ import time
 import db
 from agent import SYSTEM_PROMPT, SearchAgent
 from data import dataset, reference_output
-from judge import FAITHFULNESS_CRITERION, CorrectnessJudge, FaithfulnessJudge, render_trace
+from judge import FAITHFULNESS_CRITERION, CorrectnessJudge, FaithfulnessJudge, ToolUseJudge, render_trace
 from report import md_escape, timestamp, write_report
 
 TRIALS = 3
@@ -108,11 +108,13 @@ async def run_dataset_eval(indices=None):
     await agent.setup()
     correctness = CorrectnessJudge()
     faithfulness = FaithfulnessJudge()
+    tool_use = ToolUseJudge()
     results = []
     start = time.perf_counter()
 
     conn = db.connect()
     db.seed_cases_from_dataset(conn, dataset, FAITHFULNESS_CRITERION)
+    db.seed_case_expectations(conn, dataset)
     run_id = db.insert_run(
         conn,
         agent_model=agent.model,
@@ -121,12 +123,14 @@ async def run_dataset_eval(indices=None):
         judge_models={
             correctness.name: correctness.model,
             faithfulness.name: faithfulness.model,
+            tool_use.name: tool_use.model,
         },
         judge_prompt_versions={
-            correctness.name: CorrectnessJudge.PROMPT_VERSION,
-            faithfulness.name: FaithfulnessJudge.PROMPT_VERSION,
+            correctness.name: correctness.PROMPT_VERSION,
+            faithfulness.name: faithfulness.PROMPT_VERSION,
+            tool_use.name: tool_use.PROMPT_VERSION,
         },
-        judge_temperatures={correctness.name: 0.0, faithfulness.name: 0.0},
+        judge_temperatures={correctness.name: 0.0, faithfulness.name: 0.0, tool_use.name: 0.0},
     )
     print(f"SQLite run_id={run_id}")
     faith_crit_id = db.get_faithfulness_criterion_id(conn)
@@ -140,6 +144,8 @@ async def run_dataset_eval(indices=None):
         print(f"Q: {data['input']}")
         case_id = db.get_case_id(conn, data["input"])
         correctness_crit_ids = db.get_correctness_criterion_ids(conn, case_id)
+        tool_use_payload = db.get_tool_use_expectations(conn, case_id)
+        tool_use_crit_ids = db.get_tool_use_criterion_ids(conn, case_id) if tool_use_payload else []
         rule_pass = rule_total = 0
         correctness_case_pass = faithfulness_case_pass = 0
         c_case_conf_sum = f_case_conf_sum = 0
@@ -156,7 +162,17 @@ async def run_dataset_eval(indices=None):
         ref = reference_output(idx)
 
         for t in range(TRIALS):
-            run = await agent.ask(data["input"])
+            try:
+                run = await agent.ask(data["input"])
+            except Exception as exc:
+                err = f"{type(exc).__name__}: {exc}"
+                print(f"[trial {t + 1}] AGENT ERROR: {err}")
+                db.insert_trial(
+                    conn, run_id=run_id, case_id=case_id,
+                    trial_idx=t + 1, output="", error=err,
+                )
+                conn.commit()
+                continue
             print(f"[trial {t + 1}] {run.output}")
             print(f"[trial {t + 1}] evidence: {len(run.evidence)} search(es)")
             outputs.append(run.output)
@@ -239,6 +255,24 @@ async def run_dataset_eval(indices=None):
             f_case_conf_sum += f_res.confidence
             if f_res.label == "pass":
                 faithfulness_case_pass += 1
+
+            if tool_use_payload:
+                queries = [c.query for c in run.evidence]
+                tu_res = tool_use.evaluate(queries, tool_use_payload)
+                print(f"[trial {t + 1}] tool_use: {tu_res.label}")
+                for j, cr in enumerate(tu_res.per_criterion):
+                    print(f"    T[{j + 1}] {cr.label} -- {cr.reasoning}")
+                    first = j == 0
+                    db.insert_criterion_verdict(
+                        conn, run_id=run_id, trial_id=trial_id,
+                        criterion_id=tool_use_crit_ids[j],
+                        judge_name=tool_use.name, judge_model=tool_use.model,
+                        label=cr.label, confidence=cr.confidence, reasoning=cr.reasoning,
+                        judge_latency_ms=tu_res.latency_ms if first else None,
+                        judge_tokens_in=tu_res.tokens_in if first else None,
+                        judge_tokens_out=tu_res.tokens_out if first else None,
+                        judge_cost_usd=tu_res.cost_usd if first else None,
+                    )
 
         conn.commit()  # commit per case for crash safety
 
