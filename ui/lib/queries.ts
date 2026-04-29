@@ -827,3 +827,38 @@ export function listCaseIndexRows(): CaseIndexRow[] {
     .all() as CaseIndexRow[];
   return rows;
 }
+
+export type CaseTrialHistoryRow = {
+  trial_id: number;
+  run_id: number;
+  trial_idx: number;
+  started_at: string;
+  latency_ms: number | null;
+  cost_usd: number | null;
+  correctness_pass: number;
+  correctness_total: number;
+  faithfulness_pass: number;
+  faithfulness_total: number;
+  tool_use_pass: number;
+  tool_use_total: number;
+};
+
+export function listTrialHistoryForCase(caseId: number): CaseTrialHistoryRow[] {
+  return db()
+    .prepare(
+      `SELECT t.trial_id, t.run_id, t.trial_idx, t.created_at AS started_at,
+              t.latency_ms, t.cost_usd,
+              SUM(CASE WHEN v.judge_name='correctness' AND v.score=1 THEN 1 ELSE 0 END) AS correctness_pass,
+              SUM(CASE WHEN v.judge_name='correctness' AND v.score IS NOT NULL THEN 1 ELSE 0 END) AS correctness_total,
+              SUM(CASE WHEN v.judge_name='faithfulness' AND v.score=1 THEN 1 ELSE 0 END) AS faithfulness_pass,
+              SUM(CASE WHEN v.judge_name='faithfulness' AND v.score IS NOT NULL THEN 1 ELSE 0 END) AS faithfulness_total,
+              SUM(CASE WHEN v.judge_name='tool_use' AND v.score=1 THEN 1 ELSE 0 END) AS tool_use_pass,
+              SUM(CASE WHEN v.judge_name='tool_use' AND v.score IS NOT NULL THEN 1 ELSE 0 END) AS tool_use_total
+       FROM trials t
+       LEFT JOIN criterion_verdicts v ON v.trial_id = t.trial_id
+       WHERE t.case_id = ?
+       GROUP BY t.trial_id
+       ORDER BY t.trial_id DESC`,
+    )
+    .all(caseId) as CaseTrialHistoryRow[];
+}
