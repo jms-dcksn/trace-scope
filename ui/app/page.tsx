@@ -11,8 +11,8 @@ export default function Home() {
       <h1 className="text-2xl font-semibold">Agent Eval Harness</h1>
       <div className="grid grid-cols-3 gap-4">
         <Card title="Cases" value={cases.length} href="/cases" />
-        <Card title="Fixed outputs" value={outputs.length} href="/golden" />
-        <Card title="Gold labels" value={stats.reduce((a, s) => a + s.total, 0)} href="/golden" />
+        <Card title="Fixed outputs" value={outputs.length} href="/cases" />
+        <Card title="Gold labels" value={stats.reduce((a, s) => a + s.total, 0)} href="/cases" />
       </div>
       <section>
         <h2 className="text-lg font-semibold mb-2">Gold labels by judge</h2>
