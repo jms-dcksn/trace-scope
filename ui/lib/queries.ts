@@ -738,3 +738,92 @@ export function goldLabelStats(): GoldLabelStat[] {
     )
     .all() as GoldLabelStat[];
 }
+
+export type CaseIndexRow = {
+  case_id: number;
+  input: string;
+  tags: string;
+  criteria_count: number;
+  fixed_output_count: number;
+  correctness_pass: number;
+  correctness_total: number;
+  correctness_auto: number;
+  faithfulness_pass: number;
+  faithfulness_total: number;
+  faithfulness_auto: number;
+  needs_labels: number; // 1 if any case-scoped criterion has zero gold_labels
+  last_trial_run_id: number | null;
+  last_trial_id: number | null;
+  last_trial_started: string | null;
+  last_trial_pass: number | null;   // pass count across judges for that trial
+  last_trial_total: number | null;
+};
+
+export function listCaseIndexRows(): CaseIndexRow[] {
+  const rows = db()
+    .prepare(
+      `WITH lbl AS (
+         SELECT cr.case_id, gl.judge_name,
+                SUM(CASE WHEN gl.label = 1 THEN 1 ELSE 0 END) AS pass,
+                SUM(CASE WHEN gl.label IS NOT NULL THEN 1 ELSE 0 END) AS total,
+                SUM(CASE WHEN gl.labeler = 'auto-from-case-level' THEN 1 ELSE 0 END) AS auto
+         FROM gold_labels gl
+         JOIN criteria cr ON cr.criterion_id = gl.criterion_id
+         GROUP BY cr.case_id, gl.judge_name
+       ),
+       last_trial AS (
+         SELECT t.case_id, t.trial_id, t.run_id, t.created_at AS started
+         FROM trials t
+         JOIN (
+           SELECT case_id, MAX(trial_id) AS max_id FROM trials GROUP BY case_id
+         ) m ON m.case_id = t.case_id AND m.max_id = t.trial_id
+       ),
+       last_verdicts AS (
+         SELECT v.trial_id,
+                SUM(CASE WHEN v.score = 1 THEN 1 ELSE 0 END) AS pass,
+                SUM(CASE WHEN v.score IS NOT NULL THEN 1 ELSE 0 END) AS total
+         FROM criterion_verdicts v
+         JOIN last_trial lt ON lt.trial_id = v.trial_id
+         GROUP BY v.trial_id
+       ),
+       crit_counts AS (
+         SELECT case_id, COUNT(*) AS n FROM criteria WHERE case_id IS NOT NULL GROUP BY case_id
+       ),
+       fo_counts AS (
+         SELECT case_id, COUNT(*) AS n FROM fixed_outputs GROUP BY case_id
+       ),
+       missing AS (
+         SELECT cr.case_id,
+                SUM(CASE WHEN NOT EXISTS (
+                       SELECT 1 FROM gold_labels gl WHERE gl.criterion_id = cr.criterion_id
+                ) THEN 1 ELSE 0 END) AS missing_n
+         FROM criteria cr
+         WHERE cr.case_id IS NOT NULL
+         GROUP BY cr.case_id
+       )
+       SELECT c.case_id, c.input, c.tags,
+              COALESCE(cc.n, 0) AS criteria_count,
+              COALESCE(fc.n, 0) AS fixed_output_count,
+              COALESCE((SELECT pass FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='correctness'), 0) AS correctness_pass,
+              COALESCE((SELECT total FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='correctness'), 0) AS correctness_total,
+              COALESCE((SELECT auto FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='correctness'), 0) AS correctness_auto,
+              COALESCE((SELECT pass FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='faithfulness'), 0) AS faithfulness_pass,
+              COALESCE((SELECT total FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='faithfulness'), 0) AS faithfulness_total,
+              COALESCE((SELECT auto FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='faithfulness'), 0) AS faithfulness_auto,
+              CASE WHEN COALESCE(m.missing_n, 0) > 0 THEN 1 ELSE 0 END AS needs_labels,
+              lt.run_id AS last_trial_run_id,
+              lt.trial_id AS last_trial_id,
+              lt.started AS last_trial_started,
+              lv.pass AS last_trial_pass,
+              lv.total AS last_trial_total
+       FROM cases c
+       LEFT JOIN crit_counts cc ON cc.case_id = c.case_id
+       LEFT JOIN fo_counts fc ON fc.case_id = c.case_id
+       LEFT JOIN missing m ON m.case_id = c.case_id
+       LEFT JOIN last_trial lt ON lt.case_id = c.case_id
+       LEFT JOIN last_verdicts lv ON lv.trial_id = lt.trial_id
+       ORDER BY c.case_id`,
+    )
+    .all() as CaseIndexRow[];
+  return rows;
+}
