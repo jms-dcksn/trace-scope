@@ -22,7 +22,7 @@ export default async function JudgePrDetail({ params }: { params: Promise<{ id: 
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/judges" className="text-sm text-blue-600 hover:underline">← Judge Health</Link>
+        <Link href="/judges" className="text-sm text-blue-600 hover:underline">← Judges</Link>
         <h1 className="text-2xl font-semibold mt-1">
           {run.judge_name} · run {run.judge_pr_run_id}
         </h1>

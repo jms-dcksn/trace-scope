@@ -14,7 +14,7 @@ export default function JudgesIndex() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Judge Health</h1>
+        <h1 className="text-2xl font-semibold">Judges</h1>
         <p className="text-sm text-zinc-500 mt-1">
           P/R/F1 from <code>evals judge-pr</code>. Re-run the CLI to refresh.
         </p>
@@ -35,7 +35,7 @@ export default function JudgesIndex() {
                     P {(r.precision_pct * 100).toFixed(0)}% · R {(r.recall_pct * 100).toFixed(0)}% · n={r.total}
                   </div>
                   <Link
-                    href={`/judges/${r.judge_pr_run_id}`}
+                    href={`/judges/${j}`}
                     className="text-xs text-blue-600 hover:underline mt-2 inline-block"
                   >
                     View detail →
@@ -70,7 +70,7 @@ export default function JudgesIndex() {
             {runs.map((r) => (
               <tr key={r.judge_pr_run_id} className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900">
                 <Td>
-                  <Link href={`/judges/${r.judge_pr_run_id}`} className="text-blue-600 hover:underline">
+                  <Link href={`/judges/runs/${r.judge_pr_run_id}`} className="text-blue-600 hover:underline">
                     {r.judge_pr_run_id}
                   </Link>
                 </Td>
