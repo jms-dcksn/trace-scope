@@ -23,8 +23,8 @@ Tasks 1–7 landed on branch `ui-ux-restructure` (commits d5ba332 → 7703656). 
 | 5 | `/cases/[id]` server actions | ✅ done | 7969082 |
 | 6 | `/cases/[id]` three-section page | ✅ done | 0761f4c |
 | 7 | Delete `/golden` tree | ✅ done | 7703656 |
-| 8 | Run rollup header summary | ⬜ todo | — |
-| 9 | Run rollup judges-used in rail | ⬜ todo | — |
+| 8 | Run rollup header summary | ✅ done | 60a4d78 |
+| 9 | Run rollup judges-used in rail | ✅ done | 60a4d78 |
 | 10 | Tavily parser + tests | ⬜ todo | — |
 | 11 | Tool-call expandable row | ⬜ todo | — |
 | 12 | Judge-prompt disclosure | ⬜ todo | — |
