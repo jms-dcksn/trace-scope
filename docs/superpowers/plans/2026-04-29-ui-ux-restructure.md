@@ -25,10 +25,10 @@ Tasks 1–7 landed on branch `ui-ux-restructure` (commits d5ba332 → 7703656). 
 | 7 | Delete `/golden` tree | ✅ done | 7703656 |
 | 8 | Run rollup header summary | ✅ done | 60a4d78 |
 | 9 | Run rollup judges-used in rail | ✅ done | 60a4d78 |
-| 10 | Tavily parser + tests | ⬜ todo | — |
-| 11 | Tool-call expandable row | ⬜ todo | — |
-| 12 | Judge-prompt disclosure | ⬜ todo | — |
-| 13 | Trial detail two-column | ⬜ todo | — |
+| 10 | Tavily parser + tests | ✅ done | 174a037 |
+| 11 | Tool-call expandable row | ✅ done | 4278f2c |
+| 12 | Judge-prompt disclosure | ✅ done | b785bad |
+| 13 | Trial detail two-column | ✅ done | 4f2db67 |
 | 14 | Move PR-run detail to /judges/runs | ⬜ todo | — |
 | 15 | Per-judge home queries | ⬜ todo | — |
 | 16 | Per-judge home actions | ⬜ todo | — |
