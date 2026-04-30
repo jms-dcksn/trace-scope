@@ -29,12 +29,12 @@ Tasks 1–7 landed on branch `ui-ux-restructure` (commits d5ba332 → 7703656). 
 | 11 | Tool-call expandable row | ✅ done | 4278f2c |
 | 12 | Judge-prompt disclosure | ✅ done | b785bad |
 | 13 | Trial detail two-column | ✅ done | 4f2db67 |
-| 14 | Move PR-run detail to /judges/runs | ⬜ todo | — |
-| 15 | Per-judge home queries | ⬜ todo | — |
-| 16 | Per-judge home actions | ⬜ todo | — |
-| 17 | `/judges/[name]` page | ⬜ todo | — |
-| 18 | `/judges/[name]/[promptId]` page | ⬜ todo | — |
-| 19 | Delete `/prompts` tree | ⬜ todo | — |
+| 14 | Move PR-run detail to /judges/runs | ✅ done | 1b163f4 |
+| 15 | Per-judge home queries | ✅ done | 0a76d22 |
+| 16 | Per-judge home actions | ✅ done | 723bd69 |
+| 17 | `/judges/[name]` page | ✅ done | 2c8178c |
+| 18 | `/judges/[name]/[promptId]` page | ✅ done | f06e086 |
+| 19 | Delete `/prompts` tree | ✅ done | 28f95d3 |
 | 20 | Agent harness static metadata | ⬜ todo | — |
 | 21 | `/agent` page | ⬜ todo | — |
 | 22 | Home page repoint + latest-run | ⬜ partial (count cards already repointed `/golden`→`/cases` in Task 7; latest-run card still pending) | — |
