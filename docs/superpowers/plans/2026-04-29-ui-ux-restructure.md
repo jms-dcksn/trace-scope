@@ -12,7 +12,7 @@
 
 ## Progress
 
-Tasks 1–7 landed on branch `ui-ux-restructure` (commits d5ba332 → 7703656). Tasks 8–23 not started.
+All 23 tasks complete on branch `ui-ux-restructure`. Final smoke pass: `npx tsc --noEmit` clean, `npm run build` succeeds with all 13 routes compiled. Visual smoke walk against `npm run dev` is on the human reviewer.
 
 | # | Task | Status | Commit |
 |---|------|--------|--------|
@@ -35,10 +35,10 @@ Tasks 1–7 landed on branch `ui-ux-restructure` (commits d5ba332 → 7703656). 
 | 17 | `/judges/[name]` page | ✅ done | 2c8178c |
 | 18 | `/judges/[name]/[promptId]` page | ✅ done | f06e086 |
 | 19 | Delete `/prompts` tree | ✅ done | 28f95d3 |
-| 20 | Agent harness static metadata | ⬜ todo | — |
-| 21 | `/agent` page | ⬜ todo | — |
-| 22 | Home page repoint + latest-run | ⬜ partial (count cards already repointed `/golden`→`/cases` in Task 7; latest-run card still pending) | — |
-| 23 | Final smoke pass | ⬜ todo | — |
+| 20 | Agent harness static metadata | ✅ done | d4fe8c2 |
+| 21 | `/agent` page | ✅ done | 6ef4e09 |
+| 22 | Home page repoint + latest-run | ✅ done | d925b6a |
+| 23 | Final smoke pass | ✅ done (typecheck + build) | — |
 
 When picking up Task 22, note the `<Card href="/golden">` lines no longer exist — adjust the diff accordingly.
 
