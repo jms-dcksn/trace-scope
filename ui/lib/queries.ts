@@ -862,3 +862,39 @@ export function listTrialHistoryForCase(caseId: number): CaseTrialHistoryRow[] {
     )
     .all(caseId) as CaseTrialHistoryRow[];
 }
+
+export type RunSummary = {
+  run_id: number;
+  agent_model: string;
+  case_count: number;
+  trial_count: number;
+  total_cost: number;
+  p50_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  pass: number;
+  total: number;
+};
+
+export function getRunSummary(runId: number): RunSummary | undefined {
+  const base = db()
+    .prepare(
+      `SELECT r.run_id, r.agent_model,
+              (SELECT COUNT(DISTINCT case_id) FROM trials WHERE run_id = r.run_id) AS case_count,
+              (SELECT COUNT(*) FROM trials WHERE run_id = r.run_id) AS trial_count,
+              COALESCE((SELECT SUM(cost_usd) FROM trials WHERE run_id = r.run_id), 0)
+                + COALESCE((SELECT SUM(judge_cost_usd) FROM criterion_verdicts WHERE run_id = r.run_id), 0) AS total_cost,
+              (SELECT SUM(CASE WHEN score = 1 THEN 1 ELSE 0 END) FROM criterion_verdicts WHERE run_id = r.run_id) AS pass,
+              (SELECT SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) FROM criterion_verdicts WHERE run_id = r.run_id) AS total
+       FROM runs r WHERE r.run_id = ?`,
+    )
+    .get(runId) as Omit<RunSummary, "p50_latency_ms" | "p95_latency_ms"> | undefined;
+  if (!base) return undefined;
+  const latencies = (
+    db()
+      .prepare(`SELECT latency_ms FROM trials WHERE run_id = ? AND latency_ms IS NOT NULL ORDER BY latency_ms`)
+      .all(runId) as { latency_ms: number }[]
+  ).map((r) => r.latency_ms);
+  const pct = (p: number) =>
+    latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * p))] : null;
+  return { ...base, p50_latency_ms: pct(0.5), p95_latency_ms: pct(0.95) };
+}
