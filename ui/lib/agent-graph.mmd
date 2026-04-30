@@ -1,0 +1,5 @@
+graph TD
+  start([__start__]) --> agent
+  agent -->|tool_calls present| tools
+  tools --> agent
+  agent -->|no tool_calls| end_node([__end__])
