@@ -904,3 +904,75 @@ export function resolveJudgePrompt(judgeName: string, version: string): JudgePro
     .prepare(`SELECT * FROM judge_prompts WHERE judge_name = ? AND version = ?`)
     .get(judgeName, version) as JudgePrompt | undefined;
 }
+
+export type JudgePromptHistoryRow = {
+  judge_prompt_id: number;
+  judge_name: string;
+  version: string;
+  is_active: number;
+  template: string;
+  notes: string | null;
+  updated_at: string;
+  used_by_runs: number;
+  first_used: string | null;
+  last_used: string | null;
+  precision_pct: number | null;
+  recall_pct: number | null;
+  f1_pct: number | null;
+};
+
+export function listJudgePromptHistory(judgeName: string): JudgePromptHistoryRow[] {
+  const prompts = listPromptsForJudge(judgeName);
+  return prompts.map((p) => {
+    const matching = db()
+      .prepare(
+        `SELECT started_at FROM runs
+         WHERE json_extract(judge_prompt_versions, '$.' || ?) = ?
+         ORDER BY started_at`,
+      )
+      .all(judgeName, p.version) as { started_at: string }[];
+    const first = matching.length ? matching[0].started_at : null;
+    const last = matching.length ? matching[matching.length - 1].started_at : null;
+    const usedBy = matching.length;
+    const pr = db()
+      .prepare(
+        `SELECT precision_pct, recall_pct, f1_pct
+         FROM judge_pr_runs
+         WHERE judge_name = ? AND prompt_version = ?
+         ORDER BY started_at DESC LIMIT 1`,
+      )
+      .get(judgeName, p.version) as
+      | { precision_pct: number; recall_pct: number; f1_pct: number }
+      | undefined;
+    return {
+      judge_prompt_id: p.judge_prompt_id,
+      judge_name: p.judge_name,
+      version: p.version,
+      is_active: p.is_active,
+      template: p.template,
+      notes: p.notes,
+      updated_at: p.updated_at,
+      used_by_runs: usedBy,
+      first_used: first,
+      last_used: last,
+      precision_pct: pr?.precision_pct ?? null,
+      recall_pct: pr?.recall_pct ?? null,
+      f1_pct: pr?.f1_pct ?? null,
+    };
+  });
+}
+
+export function goldLabelStatsForJudge(judgeName: string): GoldLabelStat | undefined {
+  return db()
+    .prepare(
+      `SELECT judge_name,
+              COUNT(*) AS total,
+              SUM(CASE WHEN label = 1 THEN 1 ELSE 0 END) AS pass,
+              SUM(CASE WHEN label = 0 THEN 1 ELSE 0 END) AS fail,
+              SUM(CASE WHEN labeler = 'auto-from-case-level' THEN 0 ELSE 1 END) AS hand,
+              SUM(CASE WHEN labeler = 'auto-from-case-level' THEN 1 ELSE 0 END) AS auto
+       FROM gold_labels WHERE judge_name = ?
+       GROUP BY judge_name`,
+    )
+    .get(judgeName) as GoldLabelStat | undefined;
+}
