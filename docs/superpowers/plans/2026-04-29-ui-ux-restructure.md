@@ -10,6 +10,38 @@
 
 **Verification model.** The repo has no UI test framework. Each task ends with a manual verification step that hits a real URL with `npm run dev` and points at `evals.db`. Pure helpers (e.g. Tavily result parser) get small co-located TS unit tests run via `node --test` against compiled output, when introduced.
 
+## Progress
+
+Tasks 1–7 landed on branch `ui-ux-restructure` (commits d5ba332 → 7703656). Tasks 8–23 not started.
+
+| # | Task | Status | Commit |
+|---|------|--------|--------|
+| 1 | Top nav | ✅ done | d5ba332 |
+| 2 | `listCaseIndexRows` query | ✅ done | 804805e |
+| 3 | `/cases` index page | ✅ done | fb42135 |
+| 4 | `listTrialHistoryForCase` query | ✅ done | 841f103 |
+| 5 | `/cases/[id]` server actions | ✅ done | 7969082 |
+| 6 | `/cases/[id]` three-section page | ✅ done | 0761f4c |
+| 7 | Delete `/golden` tree | ✅ done | 7703656 |
+| 8 | Run rollup header summary | ⬜ todo | — |
+| 9 | Run rollup judges-used in rail | ⬜ todo | — |
+| 10 | Tavily parser + tests | ⬜ todo | — |
+| 11 | Tool-call expandable row | ⬜ todo | — |
+| 12 | Judge-prompt disclosure | ⬜ todo | — |
+| 13 | Trial detail two-column | ⬜ todo | — |
+| 14 | Move PR-run detail to /judges/runs | ⬜ todo | — |
+| 15 | Per-judge home queries | ⬜ todo | — |
+| 16 | Per-judge home actions | ⬜ todo | — |
+| 17 | `/judges/[name]` page | ⬜ todo | — |
+| 18 | `/judges/[name]/[promptId]` page | ⬜ todo | — |
+| 19 | Delete `/prompts` tree | ⬜ todo | — |
+| 20 | Agent harness static metadata | ⬜ todo | — |
+| 21 | `/agent` page | ⬜ todo | — |
+| 22 | Home page repoint + latest-run | ⬜ partial (count cards already repointed `/golden`→`/cases` in Task 7; latest-run card still pending) | — |
+| 23 | Final smoke pass | ⬜ todo | — |
+
+When picking up Task 22, note the `<Card href="/golden">` lines no longer exist — adjust the diff accordingly.
+
 **Decisions resolved up front (from the spec's open questions):**
 
 1. **Agent page config source of truth.** Read live values from the most recent `runs` row (`agent_model`, `agent_system_prompt`). Tool metadata and the LangGraph mermaid are committed as static files (`ui/lib/agent-info.ts`, `ui/lib/agent-graph.mmd`) — `agent.py` only declares one tool (`web_search`) with a fixed docstring, so duplicating that is cheaper than introspecting Python at request time.
@@ -63,7 +95,7 @@ Tasks are ordered so each one leaves the app runnable. The old routes are not de
 - Modify: `ui/app/layout.tsx:11-20`
 - Modify: `ui/lib/queries.ts` (add empty exports for queries that later tasks will fill)
 
-- [ ] **Step 1: Replace nav links**
+- [x] **Step 1: Replace nav links**
 
 In `ui/app/layout.tsx`, replace the `<nav>` block (lines 13-19) with:
 
@@ -76,11 +108,11 @@ In `ui/app/layout.tsx`, replace the `<nav>` block (lines 13-19) with:
 </nav>
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 Run `cd ui && npm run dev` (port 3030). Visit `http://localhost:3030`. Expect: nav shows Cases · Runs · Agent · Judges. `/agent` will 404 — that's fine, it's built in Task 11. `/golden` and `/prompts` still load (deleted later).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add ui/app/layout.tsx
@@ -94,7 +126,7 @@ git commit -m "ui: switch top nav to cases/runs/agent/judges"
 **Files:**
 - Modify: `ui/lib/queries.ts` (append after `goldLabelStats` near end)
 
-- [ ] **Step 1: Add `caseIndexRows` query**
+- [x] **Step 1: Add `caseIndexRows` query**
 
 Append to `ui/lib/queries.ts`:
 
@@ -189,7 +221,7 @@ export function listCaseIndexRows(): CaseIndexRow[] {
 }
 ```
 
-- [ ] **Step 2: Verify the query runs**
+- [x] **Step 2: Verify the query runs**
 
 ```bash
 cd ui && npx tsc --noEmit
@@ -197,7 +229,7 @@ cd ui && npx tsc --noEmit
 
 Expected: no type errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add ui/lib/queries.ts
@@ -211,7 +243,7 @@ git commit -m "ui: add listCaseIndexRows query for cases index page"
 **Files:**
 - Modify: `ui/app/cases/page.tsx` (full rewrite, ~80 lines)
 
-- [ ] **Step 1: Rewrite cases index**
+- [x] **Step 1: Rewrite cases index**
 
 Replace `ui/app/cases/page.tsx` with:
 
@@ -328,11 +360,11 @@ function Td({ children, className = "" }: { children: React.ReactNode; className
 }
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 `cd ui && npm run dev`. Visit `http://localhost:3030/cases`. Expect: table with all cases, filters in URL (`?filter=needs_labels`), each row links to `/cases/[id]`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add ui/app/cases/page.tsx
@@ -346,7 +378,7 @@ git commit -m "ui: rewrite cases index as table with gold-coverage columns"
 **Files:**
 - Modify: `ui/lib/queries.ts` (append)
 
-- [ ] **Step 1: Add query**
+- [x] **Step 1: Add query**
 
 Append to `ui/lib/queries.ts`:
 
@@ -387,7 +419,7 @@ export function listTrialHistoryForCase(caseId: number): CaseTrialHistoryRow[] {
 }
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 cd ui && npx tsc --noEmit
@@ -395,7 +427,7 @@ cd ui && npx tsc --noEmit
 
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add ui/lib/queries.ts
@@ -409,7 +441,7 @@ git commit -m "ui: add listTrialHistoryForCase query"
 **Files:**
 - Create: `ui/app/cases/[id]/actions.ts`
 
-- [ ] **Step 1: Create actions.ts**
+- [x] **Step 1: Create actions.ts**
 
 Create `ui/app/cases/[id]/actions.ts`:
 
@@ -474,7 +506,7 @@ export async function saveGoldLabel(formData: FormData) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add ui/app/cases/[id]/actions.ts
@@ -488,7 +520,7 @@ git commit -m "ui: copy gold-label and criterion actions to cases/[id]"
 **Files:**
 - Modify: `ui/app/cases/[id]/page.tsx` (full rewrite)
 
-- [ ] **Step 1: Rewrite case detail**
+- [x] **Step 1: Rewrite case detail**
 
 Replace `ui/app/cases/[id]/page.tsx` with:
 
@@ -726,11 +758,11 @@ function Td({ children, className = "" }: { children: React.ReactNode; className
 }
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 `cd ui && npm run dev`. Visit `/cases/1` (or any case ID with fixed outputs). Expect: three sections — Definition (with criteria editors), Golden record (collapsible per fixed output, with output editor + label forms), Trial history table. Test saving a criterion and a gold label.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add ui/app/cases/[id]/page.tsx
@@ -744,14 +776,14 @@ git commit -m "ui: case detail folds golden record and trial history"
 **Files:**
 - Delete: `ui/app/golden/page.tsx`, `ui/app/golden/[id]/page.tsx`, `ui/app/golden/actions.ts`
 
-- [ ] **Step 1: Delete and re-point any callers**
+- [x] **Step 1: Delete and re-point any callers**
 
 ```bash
 rm ui/app/golden/page.tsx ui/app/golden/[id]/page.tsx ui/app/golden/actions.ts
 rmdir ui/app/golden/[id] ui/app/golden
 ```
 
-- [ ] **Step 2: Update PR-run detail link to fixed_output**
+- [x] **Step 2: Update PR-run detail link to fixed_output**
 
 In `ui/app/judges/[id]/page.tsx:90`, change `href={`/golden/${r.fixed_output_id}`}` to point at the case page:
 
@@ -769,7 +801,7 @@ Then in `ui/app/judges/[id]/page.tsx`, replace the `<Link>` block at line 89-93 
 </Td>
 ```
 
-- [ ] **Step 3: Search for any remaining /golden references**
+- [x] **Step 3: Search for any remaining /golden references**
 
 ```bash
 grep -rn "/golden" ui/app ui/lib
@@ -777,7 +809,7 @@ grep -rn "/golden" ui/app ui/lib
 
 Expected: no matches except nav (already changed). If any found in UI source, replace with `/cases` or `/cases/[id]`.
 
-- [ ] **Step 4: Type-check and verify**
+- [x] **Step 4: Type-check and verify**
 
 ```bash
 cd ui && npx tsc --noEmit
@@ -786,7 +818,7 @@ npm run dev
 
 Visit `/golden` — should 404. Visit `/cases/1` — still works. Visit `/judges/<some PR run id>` — fo links go to `/cases/[id]`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A ui/app
