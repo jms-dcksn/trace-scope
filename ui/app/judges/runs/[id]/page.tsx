@@ -22,7 +22,7 @@ export default async function JudgePrDetail({ params }: { params: Promise<{ id: 
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/judges" className="text-sm text-blue-600 hover:underline">← Judge Health</Link>
+        <Link href="/judges" className="text-sm text-blue-600 hover:underline">← Judges</Link>
         <h1 className="text-2xl font-semibold mt-1">
           {run.judge_name} · run {run.judge_pr_run_id}
         </h1>
@@ -87,8 +87,8 @@ export default async function JudgePrDetail({ params }: { params: Promise<{ id: 
                   {list.map((r) => (
                     <tr key={r.judge_pr_row_id} className="border-t border-zinc-200 dark:border-zinc-800">
                       <Td>
-                        <Link href={`/golden/${r.fixed_output_id}`} className="text-blue-600 hover:underline">
-                          #{r.fixed_output_id}
+                        <Link href={`/cases/${r.case_id}`} className="text-blue-600 hover:underline">
+                          fo #{r.fixed_output_id}
                         </Link>
                       </Td>
                       <Td className="max-w-[12rem] truncate" title={r.case_input}>{r.case_input}</Td>

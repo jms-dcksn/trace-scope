@@ -16,9 +16,10 @@ export async function savePrompt(formData: FormData) {
   const row = db()
     .prepare(`SELECT judge_name FROM judge_prompts WHERE judge_prompt_id = ?`)
     .get(id) as { judge_name: string } | undefined;
-  if (row) revalidatePath(`/prompts/${row.judge_name}`);
-  revalidatePath(`/prompts/${row?.judge_name ?? ""}/${id}`);
-  revalidatePath(`/prompts`);
+  if (row) {
+    revalidatePath(`/judges/${row.judge_name}`);
+    revalidatePath(`/judges/${row.judge_name}/${id}`);
+  }
 }
 
 export async function setActive(formData: FormData) {
@@ -30,17 +31,12 @@ export async function setActive(formData: FormData) {
   if (!row) throw new Error("not found");
 
   const tx = db().transaction(() => {
-    db()
-      .prepare(`UPDATE judge_prompts SET is_active = 0 WHERE judge_name = ?`)
-      .run(row.judge_name);
-    db()
-      .prepare(`UPDATE judge_prompts SET is_active = 1, updated_at = ? WHERE judge_prompt_id = ?`)
-      .run(nowIso(), id);
+    db().prepare(`UPDATE judge_prompts SET is_active = 0 WHERE judge_name = ?`).run(row.judge_name);
+    db().prepare(`UPDATE judge_prompts SET is_active = 1, updated_at = ? WHERE judge_prompt_id = ?`).run(nowIso(), id);
   });
   tx();
 
-  revalidatePath(`/prompts/${row.judge_name}`);
-  revalidatePath(`/prompts`);
+  revalidatePath(`/judges/${row.judge_name}`);
 }
 
 export async function cloneAsNewVersion(formData: FormData) {
@@ -63,6 +59,5 @@ export async function cloneAsNewVersion(formData: FormData) {
     )
     .run(src.judge_name, newVersion, src.template, notes, ts, ts);
 
-  revalidatePath(`/prompts/${src.judge_name}`);
-  revalidatePath(`/prompts`);
+  revalidatePath(`/judges/${src.judge_name}`);
 }

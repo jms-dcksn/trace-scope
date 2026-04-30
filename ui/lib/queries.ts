@@ -738,3 +738,251 @@ export function goldLabelStats(): GoldLabelStat[] {
     )
     .all() as GoldLabelStat[];
 }
+
+export type CaseIndexRow = {
+  case_id: number;
+  input: string;
+  tags: string;
+  criteria_count: number;
+  fixed_output_count: number;
+  correctness_pass: number;
+  correctness_total: number;
+  correctness_auto: number;
+  faithfulness_pass: number;
+  faithfulness_total: number;
+  faithfulness_auto: number;
+  needs_labels: number; // 1 if any case-scoped criterion has zero gold_labels
+  last_trial_run_id: number | null;
+  last_trial_id: number | null;
+  last_trial_started: string | null;
+  last_trial_pass: number | null;   // pass count across judges for that trial
+  last_trial_total: number | null;
+};
+
+export function listCaseIndexRows(): CaseIndexRow[] {
+  const rows = db()
+    .prepare(
+      `WITH lbl AS (
+         SELECT cr.case_id, gl.judge_name,
+                SUM(CASE WHEN gl.label = 1 THEN 1 ELSE 0 END) AS pass,
+                SUM(CASE WHEN gl.label IS NOT NULL THEN 1 ELSE 0 END) AS total,
+                SUM(CASE WHEN gl.labeler = 'auto-from-case-level' THEN 1 ELSE 0 END) AS auto
+         FROM gold_labels gl
+         JOIN criteria cr ON cr.criterion_id = gl.criterion_id
+         GROUP BY cr.case_id, gl.judge_name
+       ),
+       last_trial AS (
+         SELECT t.case_id, t.trial_id, t.run_id, t.created_at AS started
+         FROM trials t
+         JOIN (
+           SELECT case_id, MAX(trial_id) AS max_id FROM trials GROUP BY case_id
+         ) m ON m.case_id = t.case_id AND m.max_id = t.trial_id
+       ),
+       last_verdicts AS (
+         SELECT v.trial_id,
+                SUM(CASE WHEN v.score = 1 THEN 1 ELSE 0 END) AS pass,
+                SUM(CASE WHEN v.score IS NOT NULL THEN 1 ELSE 0 END) AS total
+         FROM criterion_verdicts v
+         JOIN last_trial lt ON lt.trial_id = v.trial_id
+         GROUP BY v.trial_id
+       ),
+       crit_counts AS (
+         SELECT case_id, COUNT(*) AS n FROM criteria WHERE case_id IS NOT NULL GROUP BY case_id
+       ),
+       fo_counts AS (
+         SELECT case_id, COUNT(*) AS n FROM fixed_outputs GROUP BY case_id
+       ),
+       missing AS (
+         SELECT cr.case_id,
+                SUM(CASE WHEN NOT EXISTS (
+                       SELECT 1 FROM gold_labels gl WHERE gl.criterion_id = cr.criterion_id
+                ) THEN 1 ELSE 0 END) AS missing_n
+         FROM criteria cr
+         WHERE cr.case_id IS NOT NULL
+         GROUP BY cr.case_id
+       )
+       SELECT c.case_id, c.input, c.tags,
+              COALESCE(cc.n, 0) AS criteria_count,
+              COALESCE(fc.n, 0) AS fixed_output_count,
+              COALESCE((SELECT pass FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='correctness'), 0) AS correctness_pass,
+              COALESCE((SELECT total FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='correctness'), 0) AS correctness_total,
+              COALESCE((SELECT auto FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='correctness'), 0) AS correctness_auto,
+              COALESCE((SELECT pass FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='faithfulness'), 0) AS faithfulness_pass,
+              COALESCE((SELECT total FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='faithfulness'), 0) AS faithfulness_total,
+              COALESCE((SELECT auto FROM lbl WHERE lbl.case_id = c.case_id AND judge_name='faithfulness'), 0) AS faithfulness_auto,
+              CASE WHEN COALESCE(m.missing_n, 0) > 0 THEN 1 ELSE 0 END AS needs_labels,
+              lt.run_id AS last_trial_run_id,
+              lt.trial_id AS last_trial_id,
+              lt.started AS last_trial_started,
+              lv.pass AS last_trial_pass,
+              lv.total AS last_trial_total
+       FROM cases c
+       LEFT JOIN crit_counts cc ON cc.case_id = c.case_id
+       LEFT JOIN fo_counts fc ON fc.case_id = c.case_id
+       LEFT JOIN missing m ON m.case_id = c.case_id
+       LEFT JOIN last_trial lt ON lt.case_id = c.case_id
+       LEFT JOIN last_verdicts lv ON lv.trial_id = lt.trial_id
+       ORDER BY c.case_id`,
+    )
+    .all() as CaseIndexRow[];
+  return rows;
+}
+
+export type CaseTrialHistoryRow = {
+  trial_id: number;
+  run_id: number;
+  trial_idx: number;
+  started_at: string;
+  latency_ms: number | null;
+  cost_usd: number | null;
+  correctness_pass: number;
+  correctness_total: number;
+  faithfulness_pass: number;
+  faithfulness_total: number;
+  tool_use_pass: number;
+  tool_use_total: number;
+};
+
+export function listTrialHistoryForCase(caseId: number): CaseTrialHistoryRow[] {
+  return db()
+    .prepare(
+      `SELECT t.trial_id, t.run_id, t.trial_idx, t.created_at AS started_at,
+              t.latency_ms, t.cost_usd,
+              SUM(CASE WHEN v.judge_name='correctness' AND v.score=1 THEN 1 ELSE 0 END) AS correctness_pass,
+              SUM(CASE WHEN v.judge_name='correctness' AND v.score IS NOT NULL THEN 1 ELSE 0 END) AS correctness_total,
+              SUM(CASE WHEN v.judge_name='faithfulness' AND v.score=1 THEN 1 ELSE 0 END) AS faithfulness_pass,
+              SUM(CASE WHEN v.judge_name='faithfulness' AND v.score IS NOT NULL THEN 1 ELSE 0 END) AS faithfulness_total,
+              SUM(CASE WHEN v.judge_name='tool_use' AND v.score=1 THEN 1 ELSE 0 END) AS tool_use_pass,
+              SUM(CASE WHEN v.judge_name='tool_use' AND v.score IS NOT NULL THEN 1 ELSE 0 END) AS tool_use_total
+       FROM trials t
+       LEFT JOIN criterion_verdicts v ON v.trial_id = t.trial_id
+       WHERE t.case_id = ?
+       GROUP BY t.trial_id
+       ORDER BY t.trial_id DESC`,
+    )
+    .all(caseId) as CaseTrialHistoryRow[];
+}
+
+export type RunSummary = {
+  run_id: number;
+  agent_model: string;
+  case_count: number;
+  trial_count: number;
+  total_cost: number;
+  p50_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  pass: number;
+  total: number;
+};
+
+export function getRunSummary(runId: number): RunSummary | undefined {
+  const base = db()
+    .prepare(
+      `SELECT r.run_id, r.agent_model,
+              (SELECT COUNT(DISTINCT case_id) FROM trials WHERE run_id = r.run_id) AS case_count,
+              (SELECT COUNT(*) FROM trials WHERE run_id = r.run_id) AS trial_count,
+              COALESCE((SELECT SUM(cost_usd) FROM trials WHERE run_id = r.run_id), 0)
+                + COALESCE((SELECT SUM(judge_cost_usd) FROM criterion_verdicts WHERE run_id = r.run_id), 0) AS total_cost,
+              (SELECT SUM(CASE WHEN score = 1 THEN 1 ELSE 0 END) FROM criterion_verdicts WHERE run_id = r.run_id) AS pass,
+              (SELECT SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) FROM criterion_verdicts WHERE run_id = r.run_id) AS total
+       FROM runs r WHERE r.run_id = ?`,
+    )
+    .get(runId) as Omit<RunSummary, "p50_latency_ms" | "p95_latency_ms"> | undefined;
+  if (!base) return undefined;
+  const latencies = (
+    db()
+      .prepare(`SELECT latency_ms FROM trials WHERE run_id = ? AND latency_ms IS NOT NULL ORDER BY latency_ms`)
+      .all(runId) as { latency_ms: number }[]
+  ).map((r) => r.latency_ms);
+  const pct = (p: number) =>
+    latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * p))] : null;
+  return { ...base, p50_latency_ms: pct(0.5), p95_latency_ms: pct(0.95) };
+}
+
+export function resolveJudgePrompt(judgeName: string, version: string): JudgePrompt | undefined {
+  return db()
+    .prepare(`SELECT * FROM judge_prompts WHERE judge_name = ? AND version = ?`)
+    .get(judgeName, version) as JudgePrompt | undefined;
+}
+
+export type JudgePromptHistoryRow = {
+  judge_prompt_id: number;
+  judge_name: string;
+  version: string;
+  is_active: number;
+  template: string;
+  notes: string | null;
+  updated_at: string;
+  used_by_runs: number;
+  first_used: string | null;
+  last_used: string | null;
+  precision_pct: number | null;
+  recall_pct: number | null;
+  f1_pct: number | null;
+};
+
+export function listJudgePromptHistory(judgeName: string): JudgePromptHistoryRow[] {
+  const prompts = listPromptsForJudge(judgeName);
+  return prompts.map((p) => {
+    const matching = db()
+      .prepare(
+        `SELECT started_at FROM runs
+         WHERE json_extract(judge_prompt_versions, '$.' || ?) = ?
+         ORDER BY started_at`,
+      )
+      .all(judgeName, p.version) as { started_at: string }[];
+    const first = matching.length ? matching[0].started_at : null;
+    const last = matching.length ? matching[matching.length - 1].started_at : null;
+    const usedBy = matching.length;
+    const pr = db()
+      .prepare(
+        `SELECT precision_pct, recall_pct, f1_pct
+         FROM judge_pr_runs
+         WHERE judge_name = ? AND prompt_version = ?
+         ORDER BY started_at DESC LIMIT 1`,
+      )
+      .get(judgeName, p.version) as
+      | { precision_pct: number; recall_pct: number; f1_pct: number }
+      | undefined;
+    return {
+      judge_prompt_id: p.judge_prompt_id,
+      judge_name: p.judge_name,
+      version: p.version,
+      is_active: p.is_active,
+      template: p.template,
+      notes: p.notes,
+      updated_at: p.updated_at,
+      used_by_runs: usedBy,
+      first_used: first,
+      last_used: last,
+      precision_pct: pr?.precision_pct ?? null,
+      recall_pct: pr?.recall_pct ?? null,
+      f1_pct: pr?.f1_pct ?? null,
+    };
+  });
+}
+
+export function mostRecentRun(): Run | undefined {
+  return db().prepare(`SELECT * FROM runs ORDER BY started_at DESC LIMIT 1`).get() as Run | undefined;
+}
+
+export function recentRunsByModel(agentModel: string, limit = 10): Run[] {
+  return db()
+    .prepare(`SELECT * FROM runs WHERE agent_model = ? ORDER BY started_at DESC LIMIT ?`)
+    .all(agentModel, limit) as Run[];
+}
+
+export function goldLabelStatsForJudge(judgeName: string): GoldLabelStat | undefined {
+  return db()
+    .prepare(
+      `SELECT judge_name,
+              COUNT(*) AS total,
+              SUM(CASE WHEN label = 1 THEN 1 ELSE 0 END) AS pass,
+              SUM(CASE WHEN label = 0 THEN 1 ELSE 0 END) AS fail,
+              SUM(CASE WHEN labeler = 'auto-from-case-level' THEN 0 ELSE 1 END) AS hand,
+              SUM(CASE WHEN labeler = 'auto-from-case-level' THEN 1 ELSE 0 END) AS auto
+       FROM gold_labels WHERE judge_name = ?
+       GROUP BY judge_name`,
+    )
+    .get(judgeName) as GoldLabelStat | undefined;
+}

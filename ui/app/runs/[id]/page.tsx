@@ -5,6 +5,7 @@ import {
   failureModeCountsForRun,
   getPromptIdByJudgeAndVersion,
   getRun,
+  getRunSummary,
   listTrialsForRun,
   reviewedCountsForRun,
 } from "@/lib/queries";
@@ -33,41 +34,20 @@ export default async function RunDetail({ params }: { params: Promise<{ id: stri
       <div>
         <Link href="/runs" className="text-sm text-blue-600 hover:underline">← Runs</Link>
         <h1 className="text-2xl font-semibold mt-1">Run #{run.run_id}</h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          {run.agent_model} · started {run.started_at} · {run.trials_per_case} trials/case
+        {(() => {
+          const s = getRunSummary(runId)!;
+          const passPct = s.total ? Math.round((s.pass / s.total) * 100) : 0;
+          return (
+            <p className="text-sm text-zinc-500 mt-1">
+              {s.agent_model} · {s.case_count} cases · {s.trial_count} trials · ${s.total_cost.toFixed(4)} ·
+              {" "}p50 {s.p50_latency_ms ?? "—"}ms / p95 {s.p95_latency_ms ?? "—"}ms · pass {s.pass}/{s.total} ({passPct}%)
+            </p>
+          );
+        })()}
+        <p className="text-xs text-zinc-500 mt-1">
+          started {run.started_at} · {run.trials_per_case} trials/case · config_hash <code>{run.config_hash}</code>
         </p>
-        <p className="text-xs text-zinc-500 mt-1">config_hash <code>{run.config_hash}</code></p>
       </div>
-
-      <section className="space-y-2">
-        <h2 className="font-semibold">Judges used</h2>
-        <table className="text-sm border border-zinc-200 dark:border-zinc-800">
-          <thead className="bg-zinc-100 dark:bg-zinc-900">
-            <tr><Th>Judge</Th><Th>Model</Th><Th>Prompt version</Th></tr>
-          </thead>
-          <tbody>
-            {Object.keys(judgeModels).map((j) => {
-              const v = judgeVersions[j];
-              const pid = v ? getPromptIdByJudgeAndVersion(j, v) : undefined;
-              return (
-                <tr key={j} className="border-t border-zinc-200 dark:border-zinc-800">
-                  <Td>{j}</Td>
-                  <Td>{judgeModels[j]}</Td>
-                  <Td>
-                    {pid ? (
-                      <Link href={`/prompts/${j}/${pid}`} className="text-blue-600 hover:underline font-mono">
-                        {v}
-                      </Link>
-                    ) : (
-                      <span className="font-mono">{v ?? "—"}</span>
-                    )}
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-6">
         <section>
@@ -130,20 +110,41 @@ export default async function RunDetail({ params }: { params: Promise<{ id: stri
           </table>
         </section>
 
-        <aside className="space-y-2">
-          <h2 className="font-semibold">Failure modes</h2>
-          {failureModes.length === 0 ? (
-            <p className="text-xs text-zinc-500">No reviewed verdicts yet.</p>
-          ) : (
-            <ul className="text-sm space-y-1">
-              {failureModes.map((fm) => (
-                <li key={fm.failure_mode} className="flex justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 py-1">
-                  <span className="font-mono text-xs">{fm.failure_mode}</span>
-                  <span className="tabular-nums">{fm.n}</span>
-                </li>
-              ))}
+        <aside className="space-y-4">
+          <section>
+            <h2 className="font-semibold mb-2">Judges used</h2>
+            <ul className="text-xs space-y-1">
+              {Object.keys(judgeModels).map((j) => {
+                const v = judgeVersions[j];
+                const pid = v ? getPromptIdByJudgeAndVersion(j, v) : undefined;
+                return (
+                  <li key={j} className="flex justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 py-1">
+                    <span>{j} · {judgeModels[j]}</span>
+                    {pid ? (
+                      <Link href={`/judges/${j}/${pid}`} className="text-blue-600 hover:underline font-mono">{v}</Link>
+                    ) : (
+                      <span className="font-mono">{v ?? "—"}</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
-          )}
+          </section>
+          <section>
+            <h2 className="font-semibold mb-2">Failure modes</h2>
+            {failureModes.length === 0 ? (
+              <p className="text-xs text-zinc-500">No reviewed verdicts yet.</p>
+            ) : (
+              <ul className="text-sm space-y-1">
+                {failureModes.map((fm) => (
+                  <li key={fm.failure_mode} className="flex justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 py-1">
+                    <span className="font-mono text-xs">{fm.failure_mode}</span>
+                    <span className="tabular-nums">{fm.n}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </aside>
       </div>
     </div>
