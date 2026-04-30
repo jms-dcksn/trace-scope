@@ -962,6 +962,16 @@ export function listJudgePromptHistory(judgeName: string): JudgePromptHistoryRow
   });
 }
 
+export function mostRecentRun(): Run | undefined {
+  return db().prepare(`SELECT * FROM runs ORDER BY started_at DESC LIMIT 1`).get() as Run | undefined;
+}
+
+export function recentRunsByModel(agentModel: string, limit = 10): Run[] {
+  return db()
+    .prepare(`SELECT * FROM runs WHERE agent_model = ? ORDER BY started_at DESC LIMIT ?`)
+    .all(agentModel, limit) as Run[];
+}
+
 export function goldLabelStatsForJudge(judgeName: string): GoldLabelStat | undefined {
   return db()
     .prepare(
