@@ -898,3 +898,9 @@ export function getRunSummary(runId: number): RunSummary | undefined {
     latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * p))] : null;
   return { ...base, p50_latency_ms: pct(0.5), p95_latency_ms: pct(0.95) };
 }
+
+export function resolveJudgePrompt(judgeName: string, version: string): JudgePrompt | undefined {
+  return db()
+    .prepare(`SELECT * FROM judge_prompts WHERE judge_name = ? AND version = ?`)
+    .get(judgeName, version) as JudgePrompt | undefined;
+}
